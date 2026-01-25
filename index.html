@@ -1,24 +1,89 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📋</text></svg>">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Meeting Program</title>
-  <link rel="stylesheet" href="styles/base.css">
-  <link rel="stylesheet" href="styles/to-do-styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sacrament Meeting Program</title>
+
+  <link rel="canonical" href="https://khilghard.github.io/meeting-program/" />
+  <link rel="manifest" href="/meeting-program/manifest.webmanifest">
+  <link rel="stylesheet" href="css/styles.css" />
+  <<link rel="icon" href="img/favicon.ico">
 </head>
+
 <body>
 
-  <form>
-    <div class="searchbar">
-      <label for="task">Task:</label>
-      <input id="task" type="text" placeholder="What do you need to do?">
-      <input type="submit" value="Add">
-    </div>
-    <ul id="tasks"></ul>
-  </form>
+  <!-- MAIN APP ROOT -->
+  <main id="app"></main>
 
-  <script src="simple-to-do.js"></script>
+  <!-- HEADER SECTION -->
+  <header>
+    <img class="header church-name-header" src="img/wordmark-without-cornerstone.svg" alt="Church Wordmark" />
+    <span class="header-inner">Welcome</span>
+
+    <div class="sacrament-unit-header">
+      <h1>Sacrament Services</h1>
+      <h2 class="sacrament-unit-header-h2"><span id="unitname"></span></h2>
+      <h6 class="sacrament-unit-header-h6"><span id="unitaddress"></span></h6>
+      <p id="date"></p>
+    </div>
+  </header>
+
+  <!-- PROGRAM CONTENT -->
+  <div id="main-program"></div>
+
+  <!-- QR ACTION BUTTON (dynamic text + behavior handled in main.js) -->
+  <button id="qr-action-btn" class="qr-action-btn"></button>
+
+  <!-- UPDATE NOTIFICATION -->
+  <section id="update-section">
+    <div id="update-notification" hidden>
+      A new version is available.
+      <button onclick="refreshPage()">Update</button>
+    </div>
+  </section>
+
+  <!-- QR SCANNER UI -->
+  <section id="qr-scanner" hidden>
+    <video id="qr-video" autoplay playsinline aria-label="QR Scanner Camera Feed"></video>
+    <canvas id="qr-canvas" hidden></canvas>
+    <div id="qr-output"></div>
+  </section>
+
+  <!-- MODULES -->
+  <script type="module" src="js/main.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+
+  <!-- SERVICE WORKER -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/meeting-program/service-worker.js')
+        .then(registration => {
+          registration.onupdatefound = () => {
+            const installingWorker = registration.installing;
+            installingWorker.onstatechange = () => {
+              if (installingWorker.state === 'installed') {
+                if (navigator.serviceWorker.controller) {
+                  showUpdateNotification();
+                }
+              }
+            };
+          };
+        })
+        .catch(error => console.log('Service Worker registration failed:', error));
+    }
+
+    function refreshPage() {
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ action: 'skipWaiting' });
+        window.location.reload();
+      }
+    }
+
+    function showUpdateNotification() {
+      document.getElementById("update-notification").hidden = false;
+    }
+  </script>
+
 </body>
 </html>
