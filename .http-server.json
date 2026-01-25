@@ -1,0 +1,8 @@
+{
+  "root": ".",
+  "open": "/meeting-program/",
+  "rewrites": [
+    { "source": "/meeting-program", "destination": "/index.html" },
+    { "source": "/meeting-program/*", "destination": "/$1" }
+  ]
+}
