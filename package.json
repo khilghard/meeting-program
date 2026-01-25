@@ -2,13 +2,14 @@
   "scripts": {
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "husky": "husky install"
+    "husky": "husky install",
+    "dev": "node server.js"
   },
   "lint-staged": {
     "*.js": "eslint --fix"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.22.1"
   },
   "devDependencies": {
     "eslint": "^9.39.2",

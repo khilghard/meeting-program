@@ -58,8 +58,6 @@ body {
 }
 
 .header-inner {
-    margin-top: -2pt;
-    padding-bottom: 60px;
     text-align: center;
     position: relative;
     background: #127eba;
@@ -130,7 +128,7 @@ body {
 
 .church-name-header {
     text-align: center;
-    font-size: 20px;
+    font-size: 50px;
     padding: 0 10px;
 
     /* Full-bleed override */
