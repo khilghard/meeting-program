@@ -324,6 +324,15 @@ async function init() {
     actionBtn.onclick = () => showScanner();
   }
 
+  const header = document.getElementById("program-header");
+  if (!sheetUrl) {
+    // No URL yet → hide header
+    header.classList.add("hidden");
+  } else {
+    // Valid URL → show header
+    header.classList.remove("hidden");
+  }
+
   // No URL → stop here
   if (!sheetUrl) {
     console.log("No URL found. Waiting for QR scan.");
