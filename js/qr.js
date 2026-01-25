@@ -114,12 +114,5 @@ function handleScannedUrl(url) {
 
   // Persist until next scan
   localStorage.setItem("sheetUrl", url);
-
-  // Encode for safe redirect
-  const encoded = encodeURIComponent(url);
-
-  // Give user a moment to see the result
-  setTimeout(() => {
-    window.location.href = "/?url=" + encoded;
-  }, 600);
+  location.reload();
 }
