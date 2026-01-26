@@ -124,7 +124,6 @@ function renderLeader(value) {
 
   const phoneDiv = document.createElement("div");
   phoneDiv.className = "hymn-title";
-  phoneDiv.style = "padding-left: 30px;";
   phoneDiv.textContent = leaderSplit.phone;
 
   div.appendChild(row);
@@ -286,7 +285,6 @@ function appendRowHymn(label, value, id) {
 
   const titleDiv = document.createElement("div");
   titleDiv.className = "hymn-title";
-  titleDiv.style = "padding-left: 30px;";
   titleDiv.textContent = title;
 
   div.appendChild(row);
