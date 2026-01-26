@@ -12,6 +12,26 @@ const output = document.getElementById("qr-output");
 const ctx = canvas.getContext("2d");
 
 // ------------------------------------------------------------
+// Safari Detection
+// ------------------------------------------------------------
+function isSafari() {
+  const ua = navigator.userAgent.toLowerCase();
+  return ua.includes("safari") && !ua.includes("chrome") && !ua.includes("android");
+}
+
+function showSafariCameraHelp() {
+  alert(
+    "Safari may have blocked camera access.\n\n" +
+    "To enable it:\n" +
+    "1. Open Settings\n" +
+    "2. Scroll down and tap Safari\n" +
+    "3. Tap Camera\n" +
+    "4. Choose 'Allow'\n\n" +
+    "Then return to the app and try again."
+  );
+}
+
+// ------------------------------------------------------------
 // Public API
 // ------------------------------------------------------------
 export function showScanner() {
@@ -50,16 +70,31 @@ export function hideScanner() {
 // ------------------------------------------------------------
 async function startQRScanner() {
   try {
+    // Preflight: ensure mediaDevices exists
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      output.textContent = "Camera access is not available in this browser.";
+      return;
+    }
+
     qrStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "environment" }
     });
 
     video.srcObject = qrStream;
-    video.setAttribute("playsinline", true);
+    video.setAttribute("playsinline", true); // Required for iOS Safari
     video.play();
 
     requestAnimationFrame(scanFrame);
-  } catch {
+
+  } catch (err) {
+    console.error("Camera error:", err);
+
+    // Safari silent-deny cases
+    if (isSafari() && (err.name === "NotAllowedError" || err.name === "NotReadableError")) {
+      showSafariCameraHelp();
+      return;
+    }
+
     output.textContent = "Camera access denied or unavailable.";
   }
 }

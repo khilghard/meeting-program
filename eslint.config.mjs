@@ -19,7 +19,10 @@ module.exports = [
         navigator: "readonly",
         localStorage: "readonly",
         fetch: "readonly",
+        URL: "readonly",
         URLSearchParams: "readonly",
+        location: "readonly",
+        alert: "readonly",
         console: "readonly",
         requestAnimationFrame: "readonly",
         setTimeout: "readonly",
@@ -83,6 +86,37 @@ module.exports = [
       indent: ["error", 2],
       semi: ["error", "always"],
       quotes: ["error", "double"]
+    }
+  },
+
+  // ------------------------------------------------------------
+  // Jest Test Files
+  // ------------------------------------------------------------
+  {
+    files: ["test/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        // Jest globals
+        test: "readonly",
+        expect: "readonly",
+        describe: "readonly",
+        beforeEach: "readonly",
+        afterEach: "readonly",
+
+        // Node globals for Jest environment
+        require: "readonly",
+        module: "readonly",
+        process: "readonly",
+        console: "readonly"
+      }
+    },
+    rules: {
+      indent: ["error", 2],
+      semi: ["error", "always"],
+      quotes: ["error", "double"],
+      "no-undef": "off" // Jest defines globals dynamically
     }
   }
 ];
