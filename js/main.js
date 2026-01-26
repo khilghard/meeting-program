@@ -124,6 +124,7 @@ function renderLeader(value) {
 
   const phoneDiv = document.createElement("div");
   phoneDiv.className = "hymn-title";
+  phoneDiv.style = "padding-left: 30px;";
   phoneDiv.textContent = leaderSplit.phone;
 
   div.appendChild(row);
@@ -285,6 +286,7 @@ function appendRowHymn(label, value, id) {
 
   const titleDiv = document.createElement("div");
   titleDiv.className = "hymn-title";
+  titleDiv.style = "padding-left: 30px;";
   titleDiv.textContent = title;
 
   div.appendChild(row);
@@ -375,40 +377,145 @@ function renderProgram(rows) {
 }
 
 // ------------------------------------------------------------
-// 6. Initialize
+// 6. UI FUNCTIONS
+// ------------------------------------------------------------
+
+function fetchWithTimeout(url, ms) {
+  return Promise.race([
+    fetch(url).then(r => {
+      if (!r.ok) throw new Error("Network error");
+      return r.text();
+    }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), ms)
+    )
+  ]);
+}
+
+function showOfflineBanner() {
+  const banner = document.getElementById("offline-banner");
+  banner.classList.add("visible");
+
+  // Auto-hide after 4 seconds
+  setTimeout(() => {
+    banner.classList.remove("visible");
+  }, 4000);
+}
+
+function updateTimestamp() {
+  const el = document.getElementById("last-updated");
+  const now = new Date();
+
+  const options = {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  };
+
+  const datePart = now.toLocaleDateString(undefined, options);
+
+  const hh = now.getHours().toString().padStart(2, "0");
+  const mm = now.getMinutes().toString().padStart(2, "0");
+
+  el.textContent = `Last updated ${datePart} at ${hh}:${mm}`;
+  el.classList.remove("hidden");
+}
+
+function handleVersionVisibility() {
+  const versionEl = document.getElementById("app-version");
+
+  const scrollY = window.scrollY;
+  const viewportHeight = window.innerHeight;
+  const fullHeight = document.body.scrollHeight;
+
+  const distanceFromBottom = fullHeight - (scrollY + viewportHeight);
+
+  if (distanceFromBottom < 150) {
+    versionEl.classList.add("visible");
+  } else {
+    versionEl.classList.remove("visible");
+  }
+}
+
+// ------------------------------------------------------------
+// 7. Initialize
 // ------------------------------------------------------------
 async function init() {
-  document.getElementById("main-program").innerHTML = "";
+  const main = document.getElementById("main-program");
+  main.classList.add("loading");
 
-  const params = new URLSearchParams(window.location.search);
-  let sheetUrl = params.get("url") || localStorage.getItem("sheetUrl");
+  try {
+    const params = new URLSearchParams(window.location.search);
+    let sheetUrl = params.get("url") || localStorage.getItem("sheetUrl");
 
-  const actionBtn = document.getElementById("qr-action-btn");
+    const actionBtn = document.getElementById("qr-action-btn");
+    const header = document.getElementById("program-header");
+    const reloadBtn = document.getElementById("reload-btn");
 
-  if (!sheetUrl) {
-    actionBtn.textContent = "Scan Program QR Code";
-    actionBtn.onclick = () => showScanner();
-  } else {
+    if (!sheetUrl) {
+      actionBtn.textContent = "Scan Program QR Code";
+      actionBtn.onclick = () => showScanner();
+      header.classList.add("hidden");
+      reloadBtn.classList.add("hidden");
+      return;
+    }
+
     actionBtn.textContent = "Use New QR Code";
     actionBtn.onclick = () => showScanner();
-  }
-
-  const header = document.getElementById("program-header");
-  if (!sheetUrl) {
-    header.classList.add("hidden");
-    console.log("No URL found. Waiting for QR scan.");
-    return;
-  } else {
     header.classList.remove("hidden");
+    reloadBtn.classList.remove("hidden");
+    reloadBtn.onclick = () => init();
+
+    localStorage.setItem("sheetUrl", sheetUrl);
+
+    try {
+      const csv = await fetchWithTimeout(sheetUrl, 4000);
+      const rows = parseCSV(csv);
+
+      localStorage.setItem("lastProgramData", JSON.stringify(rows));
+
+      main.innerHTML = "";
+      renderProgram(rows);
+      updateTimestamp();
+    } catch (err) {
+      console.warn("Failed to fetch sheet:", err);
+
+      const cached = localStorage.getItem("lastProgramData");
+      if (cached) {
+        main.innerHTML = "";
+        renderProgram(JSON.parse(cached));
+        updateTimestamp();
+        showOfflineBanner();
+      } else {
+        main.textContent =
+          "Unable to load program and no cached version is available.";
+      }
+    }
+  } finally {
+    main.classList.remove("loading");
+    handleVersionVisibility(); // recalc after every init run
   }
 
-  localStorage.setItem("sheetUrl", sheetUrl);
-
-  const rows = await fetchSheet(sheetUrl);
-  if (rows) renderProgram(rows);
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 if (typeof window !== "undefined" && !window.__VITEST__) {
+  window.addEventListener("scroll", handleVersionVisibility);
+  window.addEventListener("resize", handleVersionVisibility);
+
+  window.addEventListener("online", () => {
+    document.getElementById("offline-banner").classList.remove("visible");
+  });
+
+  document.getElementById("main-program").classList.add("loading");
+
+  // after renderProgram(...)
+  document.getElementById("main-program").classList.remove("loading");
+
+  // Run once on load
+  handleVersionVisibility();
+
   init();
 }
 
