@@ -2,6 +2,18 @@
 
 Provides meeting notes highlighting the program for the day. Hosted on a GitHub Page and pulling data dynamically from Google Sheets. Designed for use on phones and tablets during sacrament meetings via QR code.
 
+The challenge this program solves:
+
+1. Need a small hosting location, ready to be a PWA on a phone or tablet at no cost
+2. Need a way to give people access to private data that is private to the unit (non-public information), also at no cost
+3. Need to be able to update the data in real time, and have it automatically updated on the website without manual intervention.
+
+The solution was:
+
+1. Github pages (since we are not expecting much traffic)
+2. Google Sheets for the CSV, as we can keep the data private as you need the exact url to view the information.
+3. A PWA that can be used offline and updated in real time.
+
 ---
 
 ## 🖼️ Site Assets
