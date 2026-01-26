@@ -54,7 +54,7 @@ function showUpdateNotification() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register('/meeting-program/service-worker.js')
+  navigator.serviceWorker.register("/meeting-program/service-worker.js")
     .then(registration => {
       console.log("Service Worker registered with scope:", registration.scope);
 

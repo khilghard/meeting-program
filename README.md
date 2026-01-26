@@ -274,7 +274,7 @@ These rows list leadership information at the bottom of the program.
 |---------|-------------|---------------|
 | `leader`| A leader’s name, calling, and phone number | `John Doe \| Bishop \| (000) 000-0000` |
 
-* Note: The phone number field requires a value of some kind. It can be None or N/A for those who don't want to share it.
+*Note:* The phone number field requires a value of some kind. It can be “None” or “N/A” for those who prefer not to share it.
 
 **Notes:**
 - You can include as many `leader` rows as you want.
@@ -382,13 +382,141 @@ This makes weekly updates simple for clerks, presidencies, or music directors.
 
 - Avoid listing minors by name  
 - Use public callings only  
-- The phone number field needs text of some kind, use N/A when the member would like to keep it private.
-    - Alternately, use an e-mail address for the phone number field
+- The phone number field needs text of some kind; use “N/A” when the member would like to keep it private
+- Alternately, use an email address for the phone number field
 - Keep the sheet **view‑only** for the public  
 - Share edit access only with trusted leaders  
 
 ---
-Here’s a polished, clearer version of your section that fits seamlessly with the tone and structure of the rest of your documentation. It keeps the workflow simple and understandable for non‑technical users while still being precise enough for leaders who will maintain the program week to week.
+
+# 🛡️ Security & Sanitization
+
+Because the app loads data directly from a Google Sheet, all content is treated as **untrusted input**. To protect members and prevent malicious or accidental breakage, the app uses a strict sanitization pipeline.
+
+This ensures:
+
+- No JavaScript can run  
+- No HTML can be injected  
+- No unsafe URLs can load  
+- No layout‑breaking markup can appear  
+- Only safe, expected content is rendered  
+
+Below is a clear explanation of what **will** work and what **will not** work.
+
+---
+
+## ✔️ What *Will* Work
+
+### **Normal text**
+- Names  
+- Hymn titles  
+- Callings  
+- Announcements  
+- Unicode characters  
+- Accents  
+- Emojis  
+- Punctuation  
+
+### **Hymn formatting**
+```
+#62 All Creatures of Our God and King
+#188 Thy Will~ O Lord, Be Done
+```
+
+### **Leadership formatting**
+```
+John Doe | Bishop | (000) 000-0000
+```
+
+### **Section headers**
+```
+Announcements
+Branch or Stake Business
+```
+
+### **Links**
+```
+Homepage | https://example.com
+```
+
+### **Links with images**
+```
+<IMG> Gospel Library | https://... | https://image-url
+```
+
+### **Placeholders**
+- `<LINK>`  
+- `<IMG>`  
+
+These are explicitly allowed.
+
+### **Dynamic keys**
+- `speaker1`, `speaker2`, etc.  
+- `intermediateHymn1`, `intermediateHymn2`, etc.
+
+---
+
+## ❌ What *Will Not* Work
+
+### **HTML tags**
+These are stripped:
+
+- `<b>bold</b>` → `bold`
+- `<i>italic</i>` → `italic`
+- `<div>stuff</div>` → `stuff`
+
+### **JavaScript injection**
+Blocked:
+
+- `<script>alert(1)</script>`
+- `<img src=x onerror=alert(1)>`
+- `<a href="javascript:alert(1)">Click</a>`
+
+### **Inline event handlers**
+Blocked:
+
+- `onclick="alert(1)"`
+- `onload="evil()"`
+
+### **HTML entities that decode into tags**
+Blocked:
+
+- `&lt;script&gt;alert(1)&lt;/script&gt;`
+
+### **Unsafe URLs**
+Only `http://` and `https://` are allowed.
+
+Blocked:
+
+- `javascript:alert(1)`
+- `data:text/html;base64,...`
+- `file:///etc/passwd`
+
+### **Embedded HTML formatting**
+These will no longer work:
+
+- `<br>`  
+- `<span>`  
+- `<strong>`  
+- `<em>`  
+
+Use plain text only.
+
+### **Extra columns or unknown keys**
+Unknown keys are ignored.
+
+### **Rich text from Google Sheets**
+Bold, colors, hyperlinks, and formatting do **not** carry over.
+
+---
+
+## 📝 Tips for Safe Content
+
+- Use plain text  
+- Use `|` to separate fields  
+- Use `<LINK>` and `<IMG>` only where documented  
+- Use `~` for commas. Google Sheets will import as a comma separated document. Using a comma denotes a third or fourth column which will be ignored during parsing.
+- Always start URLs with `https://`  
 
 ---
 
