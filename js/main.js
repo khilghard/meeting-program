@@ -400,6 +400,26 @@ function showOfflineBanner() {
   }, 4000);
 }
 
+function updateTimestamp() {
+  const el = document.getElementById("last-updated");
+  const now = new Date();
+
+  const options = {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  };
+
+  const datePart = now.toLocaleDateString(undefined, options);
+
+  const hh = now.getHours().toString().padStart(2, "0");
+  const mm = now.getMinutes().toString().padStart(2, "0");
+
+  el.textContent = `Last updated ${datePart} at ${hh}:${mm}`;
+  el.classList.remove("hidden");
+}
+
 function handleVersionVisibility() {
   const versionEl = document.getElementById("app-version");
 
