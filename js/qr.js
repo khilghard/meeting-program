@@ -32,13 +32,23 @@ function showSafariCameraHelp() {
 }
 
 // ------------------------------------------------------------
+// URL Validation
+// ------------------------------------------------------------
+function isValidSheetUrl(url) {
+  return (
+    typeof url === "string" &&
+    url.startsWith("https://docs.google.com/spreadsheets/")
+  );
+}
+
+// ------------------------------------------------------------
 // Public API
 // ------------------------------------------------------------
 export function showScanner() {
   qrSection.hidden = false;
   startQRScanner();
 
-  // When the camera is ready, THEN scroll
+  // Scroll into view once camera metadata is ready
   video.onloadedmetadata = () => {
     qrSection.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -54,8 +64,8 @@ export function hideScanner() {
   stopQRScanner();
 
   const actionBtn = document.getElementById("qr-action-btn");
-
   const storedUrl = localStorage.getItem("sheetUrl");
+
   if (!storedUrl) {
     actionBtn.textContent = "Scan Program QR Code";
   } else {
@@ -70,7 +80,6 @@ export function hideScanner() {
 // ------------------------------------------------------------
 async function startQRScanner() {
   try {
-    // Preflight: ensure mediaDevices exists
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       output.textContent = "Camera access is not available in this browser.";
       return;
@@ -89,7 +98,6 @@ async function startQRScanner() {
   } catch (err) {
     console.error("Camera error:", err);
 
-    // Safari silent-deny cases
     if (isSafari() && (err.name === "NotAllowedError" || err.name === "NotReadableError")) {
       showSafariCameraHelp();
       return;
@@ -115,7 +123,7 @@ function stopQRScanner() {
 function scanFrame(timestamp) {
   if (!qrStream) return;
 
-  // Only scan every 150ms (≈ 6–7 fps)
+  // Limit scanning to ~6–7 fps
   if (timestamp - lastScanTime < 150) {
     requestAnimationFrame(scanFrame);
     return;
@@ -132,9 +140,16 @@ function scanFrame(timestamp) {
     const code = jsQR(imageData.data, canvas.width, canvas.height);
 
     if (code) {
-      stopQRScanner(); // stops camera + loop
-      handleScannedUrl(code.data.trim());
-      return;
+      const scanned = code.data.trim();
+
+      if (isValidSheetUrl(scanned)) {
+        stopQRScanner();
+        handleScannedUrl(scanned);
+        return;
+      }
+
+      // Invalid → keep scanning
+      output.textContent = "Invalid QR code. Please scan a program QR code.";
     }
   }
 
@@ -149,5 +164,7 @@ function handleScannedUrl(url) {
 
   // Persist until next scan
   localStorage.setItem("sheetUrl", url);
+
+  // Reload app to load the program
   location.reload();
 }
