@@ -205,3 +205,38 @@ describe("parseCSV()", () => {
         expect(parseCSV(csv)).toEqual([{ key: "speaker", value: "Alice" }]);
     });
 });
+
+describe("renderLineBreak()", () => {
+  test("renders horizontal line", () => {
+  Main.renderLineBreak("Announcements");
+  const line = document.querySelector("#main-program > hr");
+  expect(line.getAttribute("data-content")).toBe("Announcements");
+  });
+});
+
+describe("renderDate()", () => {
+  test("renders date", async () => {
+  Main.renderDate("2024-01-01");
+  const dateElement = document.querySelector("#date");
+  expect(dateElement).not.toBeNull();
+  expect(dateElement.textContent).toBe("2024-01-01");
+  });
+});
+
+describe("renderUnitAddress()", () => {
+  test("renders unit address", async () => {
+  Main.renderUnitAddress("123 Main St");
+  const addressElement = document.querySelector("#unitaddress");
+  expect(addressElement).not.toBeNull();
+  expect(addressElement.textContent).toBe("123 Main St");
+  });
+});
+
+describe("renderUnitName()", () => {
+  test("renders unit name", async () => {
+  Main.renderUnitName("Unit A");
+  const nameElement = document.querySelector("#unitname");
+  expect(nameElement).not.toBeNull();
+  expect(nameElement.textContent).toBe("Unit A");
+  });
+});
