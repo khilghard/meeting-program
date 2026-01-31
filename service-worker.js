@@ -5,7 +5,7 @@ var URLS = [
   `${MPPATH}/index.html`,
   `${MPPATH}/css/styles.css`,
   `${MPPATH}/img/icon.png`,
-  `${MPPATH}/img/favicon.ico`,
+  `${MPPATH}/img/favicon.png`,
   `${MPPATH}/js/app.js`,
   `${MPPATH}/manifest.webmanifest`,
   "https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"
