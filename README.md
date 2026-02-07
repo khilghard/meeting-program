@@ -204,6 +204,8 @@ https://docs.google.com/spreadsheets/d/ABC123XYZ/gviz/tq?tqx=out:csv
 
 This is the link your PWA loads.
 
+**NOTE: Turn the google sheets link into your QR code. This is the QR code that you scan after the website loads. You click on the `Scan QR Code` button and point your camera at the Google Sheet QR code to load the program data.**
+
 ---
 
 ## 🧩 Keys & Values Reference
