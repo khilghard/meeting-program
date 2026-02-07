@@ -31,7 +31,12 @@ const SAFE_VALUE = /^[\p{L}\p{N}\p{P}\p{S}\p{Zs}~|<>]+$/u;
 
 // Strip HTML tags but preserve <LINK> and <IMG>
 export function stripTags(str) {
-  return str.replace(/<(?!LINK>|IMG>)[^>]+>/gi, "");
+  if (!str) return "";
+  // Remove script and style tags and their content entirely
+  let cleaned = str.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gmi, "");
+  cleaned = cleaned.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gmi, "");
+  // Remove other tags but keep our placeholders
+  return cleaned.replace(/<(?!LINK>|IMG>)[^>]+>/gi, "");
 }
 
 // Validate URLs (only http/https)

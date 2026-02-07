@@ -61,6 +61,31 @@ http://localhost:8000/meeting-program/
 
 ---
 
+## 🧪 Testing
+
+### End-to-End (E2E) Tests
+We use [Playwright](https://playwright.dev/) for E2E testing to ensure critical user flows work as expected.
+
+To run tests:
+```bash
+npm run test:e2e
+```
+
+Other test commands:
+- `npm run test:e2e:ui`: Open Playwright UI
+- `npm run test:e2e:debug`: Run tests in debug mode
+- `npm run test:e2e:headed`: Run tests with visible browser
+
+### Unit Tests
+We use [Vitest](https://vitest.dev/) for unit testing our core logic.
+
+To run unit tests:
+```bash
+npm test
+```
+
+---
+
 ## 🌱 Feature Work
 
 1. Branch from `develop`  

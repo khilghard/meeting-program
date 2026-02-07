@@ -18,6 +18,10 @@ async function fetchSheet(sheetUrl) {
   }
 
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
   const text = await response.text();
   return parseCSV(text);
 }
@@ -26,25 +30,58 @@ async function fetchSheet(sheetUrl) {
 // 2. Parse CSV into an array of { key, value }
 // ------------------------------------------------------------
 function parseCSV(csv) {
-  const lines = csv.trim().split("\n");
   const rows = [];
+  let currentRow = [];
+  let currentField = "";
+  let inQuotes = false;
 
+  const str = csv.trim();
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    const nextChar = str[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        i++; // skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      currentRow.push(currentField);
+      currentField = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") i++; // skip \n in \r\n
+      currentRow.push(currentField);
+      currentField = "";
+      if (currentRow.length > 0) rows.push(currentRow);
+      currentRow = [];
+    } else {
+      currentField += char;
+    }
+  }
+
+  // push last field and row
+  currentRow.push(currentField);
+  if (currentRow.length > 0) rows.push(currentRow);
+
+  const result = [];
   // assume first line is header
-  lines.slice(1).forEach(line => {
-    const [rawKey, rawValue] = line
-      .split(",")
-      .map(x => x.trim().replace(/^"|"$/g, ""));
-
+  rows.slice(1).forEach((row) => {
+    const [rawKey, rawValue] = row;
     const entry = sanitizeEntry(rawKey, rawValue);
     if (!entry) return;
 
-    // replace ~ with comma (your existing behavior)
-    entry.value = (entry.value || "").replace(/~/g, ",");
+    // replace ~ with comma
+    if (entry.value) {
+      entry.value = entry.value.replace(/~/g, ",");
+    }
 
-    rows.push(entry);
+    result.push(entry);
   });
 
-  return rows;
+  return result;
 }
 
 // ------------------------------------------------------------
@@ -156,6 +193,7 @@ function renderGeneralStatementWithLink(value) {
   const link = document.createElement("a");
   link.href = safeUrl;
   link.target = "_blank";
+  link.rel = "noopener noreferrer";
   link.className = "general-link";
   link.textContent = urlPart;
   wrapper.appendChild(link);
@@ -191,6 +229,7 @@ function renderLink(value) {
   const a = document.createElement("a");
   a.href = safeUrl;
   a.target = "_blank";
+  a.rel = "noopener noreferrer";
   a.textContent = text;
 
   div.appendChild(a);
@@ -224,6 +263,7 @@ function renderLinkWithSpace(value) {
   const a = document.createElement("a");
   a.href = safeUrl;
   a.target = "_blank";
+  a.rel = "noopener noreferrer";
   a.textContent = text;
 
   inner.appendChild(a);
@@ -362,42 +402,95 @@ const renderers = {
 // ------------------------------------------------------------
 function renderProgram(rows) {
   rows.forEach(({ key, value }) => {
-    if (!value || value.trim() === "") {
-      if (key.toLowerCase() === "horizontalline") {
-        renderers.horizontalLine("");
-      }
-      return;
-    }
+    const isHorizontalLine = key.toLowerCase() === "horizontalline";
+    const isEmpty = !value || value.trim() === "";
+
+    if (isEmpty && !isHorizontalLine) return;
 
     const renderer = renderers[key];
-    if (renderer) renderer(value);
+    if (renderer) renderer(value || "");
+  });
+
+  const alternateVersion = document.getElementById("the-version");
+  if (alternateVersion) {
+    alternateVersion.classList.remove("hidden");
+  }
+}
+
+// ------------------------------------------------------------
+// 6. Theme Logic
+// ------------------------------------------------------------
+function initTheme() {
+  const savedTheme = localStorage.getItem("theme");
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+  const applyTheme = (theme) => {
+    document.documentElement.setAttribute("data-theme", theme);
+  };
+
+  // 1. Determine initial theme
+  let theme = savedTheme;
+  if (!theme) {
+    theme = mediaQuery.matches ? "dark" : "light";
+  }
+  applyTheme(theme);
+
+  // 2. Setup Toggle Button
+  const toggleBtn = document.getElementById("theme-toggle");
+  if (toggleBtn) {
+    toggleBtn.onclick = () => {
+      const currentTheme = document.documentElement.getAttribute("data-theme");
+      const newTheme = currentTheme === "dark" ? "light" : "dark";
+      applyTheme(newTheme);
+      localStorage.setItem("theme", newTheme);
+    };
+  }
+
+  // 3. Listen for system changes (only if no manual preference set)
+  mediaQuery.addEventListener("change", (e) => {
+    if (!localStorage.getItem("theme")) {
+      applyTheme(e.matches ? "dark" : "light");
+    }
   });
 }
 
 // ------------------------------------------------------------
-// 6. UI FUNCTIONS
+// 7. UI FUNCTIONS
 // ------------------------------------------------------------
 
 function fetchWithTimeout(url, ms) {
-  return Promise.race([
-    fetch(url).then(r => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+
+  return fetch(url, { signal: controller.signal })
+    .then((r) => {
       if (!r.ok) throw new Error("Network error");
       return r.text();
-    }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout")), ms)
-    )
-  ]);
+    })
+    .catch((err) => {
+      if (err.name === "AbortError") {
+        throw new Error("Timeout");
+      }
+      throw err;
+    })
+    .finally(() => {
+      clearTimeout(timeoutId);
+    });
 }
 
 function showOfflineBanner() {
   const banner = document.getElementById("offline-banner");
+  if (!banner) return;
+  banner.innerHTML = 'Showing last available program (offline mode) &nbsp; <a href="#" id="retry-offline" style="color: #fff; text-decoration: underline;">Try Now</a>';
   banner.classList.add("visible");
 
-  // Auto-hide after 4 seconds
-  setTimeout(() => {
-    banner.classList.remove("visible");
-  }, 4000);
+  const retryBtn = document.getElementById("retry-offline");
+  if (retryBtn) {
+    retryBtn.onclick = (e) => {
+      e.preventDefault();
+      init();
+    };
+  }
 }
 
 function updateTimestamp() {
@@ -412,28 +505,58 @@ function updateTimestamp() {
   };
 
   const datePart = now.toLocaleDateString(undefined, options);
-
   const hh = now.getHours().toString().padStart(2, "0");
   const mm = now.getMinutes().toString().padStart(2, "0");
 
   el.textContent = `Last updated ${datePart} at ${hh}:${mm}`;
   el.classList.remove("hidden");
+
+  // Save specific date for Sunday logic
+  const todayKey = now.toISOString().split("T")[0]; // YYYY-MM-DD
+  localStorage.setItem("programLastUpdatedDate", todayKey);
 }
 
 function handleVersionVisibility() {
-  const versionEl = document.getElementById("app-version");
+  const appVersion = document.getElementById('app-version');
+  if (!appVersion) return;
 
-  const scrollY = window.scrollY;
-  const viewportHeight = window.innerHeight;
-  const fullHeight = document.body.scrollHeight;
+  const THRESHOLD = 120;
+  let ticking = false; // prevents redundant work
 
-  const distanceFromBottom = fullHeight - (scrollY + viewportHeight);
+  function update() {
+    ticking = false;
 
-  if (distanceFromBottom < 150) {
-    versionEl.classList.add("visible");
-  } else {
-    versionEl.classList.remove("visible");
+    const scrollBottom = window.innerHeight + window.scrollY;
+    const docHeight = document.documentElement.scrollHeight;
+
+    const nearBottom = docHeight - scrollBottom <= THRESHOLD;
+    appVersion.classList.toggle('visible', nearBottom);
   }
+
+  function onScroll() {
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(update);
+    }
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  update(); // run once on load
+}
+
+/**
+ * Simple debounce utility
+ */
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
 }
 
 // ------------------------------------------------------------
@@ -441,11 +564,27 @@ function handleVersionVisibility() {
 // ------------------------------------------------------------
 async function init() {
   const main = document.getElementById("main-program");
+  const pageContainer = document.getElementById("page-container");
+
+  // Show spinner
+  if (pageContainer) pageContainer.classList.add("loading");
   main.classList.add("loading");
 
   try {
     const params = new URLSearchParams(window.location.search);
     let sheetUrl = params.get("url") || localStorage.getItem("sheetUrl");
+
+    // Sunday Auto-Update Logic
+    const now = new Date();
+    const isSunday = now.getDay() === 0;
+    const lastUpdateDate = localStorage.getItem("programLastUpdatedDate");
+    const todayKey = now.toISOString().split("T")[0];
+    const isStale = lastUpdateDate !== todayKey;
+
+    if (isSunday && isStale && sheetUrl) {
+      console.log("Sunday detected and cache is stale. Auto-updating...");
+      // We will proceed to fetch normally below
+    }
 
     const actionBtn = document.getElementById("qr-action-btn");
     const header = document.getElementById("program-header");
@@ -471,7 +610,7 @@ async function init() {
       const csv = await fetchWithTimeout(sheetUrl, 4000);
       const rows = parseCSV(csv);
 
-      localStorage.setItem("lastProgramData", JSON.stringify(rows));
+      localStorage.setItem("programCache", JSON.stringify(rows));
 
       main.innerHTML = "";
       renderProgram(rows);
@@ -479,31 +618,35 @@ async function init() {
     } catch (err) {
       console.warn("Failed to fetch sheet:", err);
 
-      const cached = localStorage.getItem("lastProgramData");
+      const cached = localStorage.getItem("programCache");
       if (cached) {
         main.innerHTML = "";
         renderProgram(JSON.parse(cached));
         updateTimestamp();
         showOfflineBanner();
       } else {
-        main.textContent =
-          "Unable to load program and no cached version is available.";
+        main.textContent = "Unable to load program and no cached version is available.";
       }
     }
   } finally {
     main.classList.remove("loading");
-    handleVersionVisibility(); // recalc after every init run
+    if (pageContainer) pageContainer.classList.remove("loading");
+    handleVersionVisibility();
   }
 
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 if (typeof window !== "undefined" && !window.__VITEST__) {
-  window.addEventListener("scroll", handleVersionVisibility);
-  window.addEventListener("resize", handleVersionVisibility);
+  const debouncedHandleVisibility = debounce(handleVersionVisibility, 100);
+  window.addEventListener("scroll", debouncedHandleVisibility);
+  window.addEventListener("resize", debouncedHandleVisibility);
 
   window.addEventListener("online", () => {
-    document.getElementById("offline-banner").classList.remove("visible");
+    const banner = document.getElementById("offline-banner");
+    if (banner) {
+      banner.classList.remove("visible");
+    }
   });
 
   document.getElementById("main-program").classList.add("loading");
@@ -514,6 +657,7 @@ if (typeof window !== "undefined" && !window.__VITEST__) {
   // Run once on load
   handleVersionVisibility();
 
+  initTheme();
   init();
 }
 
@@ -532,6 +676,7 @@ export {
   init,
   fetchSheet,
   parseCSV,
+  fetchWithTimeout,
   renderLineBreak,
   renderDate,
   renderUnitAddress,
