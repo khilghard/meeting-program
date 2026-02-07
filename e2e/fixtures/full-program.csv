@@ -1,0 +1,41 @@
+key,value
+unitName,Unit Name
+unitAddress,123 Actual Ave~ City US 123245
+link,Homepage | https://example.com
+date,January 1~ 2026
+presiding,Leader1
+conducting,Leader2
+musicDirector,Person1
+musicOrganist,Person2
+horizontalLine,Announcements
+openingHymn,#62 All Creatures of Our God and King
+openingPrayer,By Invitation
+horizontalLine,Branch or Stake Business
+sacramentHymn,#188 Thy Will~ O Lord~ Be Done
+horizontalLine,Ordinance of the Sacrament
+speaker1,Speaker One
+speaker2,Speaker Two
+intermediateHymn,#228 (CS) My Heavenly Father Loves Me
+speaker3,Speaker Three
+speaker4,Speaker Four
+closingHymn,#2 Praise to the Lord~ the Almighty
+closingPrayer,By Invitation
+horizontalLine,Dismiss to Class
+horizontalLine,Local Leaders
+leader,John Doe | Bishop | (000) 000-0000
+leader,John Smith | 1st Councilor | (000) 000-0000
+leader,John Michaels | 2nd Councilor | (000) 000-0000
+leader,John Miles | Executive Secretary | (000) 000-0000
+leader,John Red | Ward Clerk | (000) 000-0000
+horizontalLine,Auxiliary Leaders
+leader,Peter Smith | Elders Quorum President | (000) 000-0000
+leader,Jane Doe | Relief Society President | (000) 000-0000
+leader,Michael Smith | Sunday School President | (000) 000-0000
+leader,Mary Smith | Young Women's President | (000) 000-0000
+leader,Ruth Smith | Primary President | (000) 000-0000
+horizontalLine,Other Leaders
+leader,Thomas Smith | Branch Mission Leader | (000) 000-0000
+leader,Hyrum Smith | FamilySearch Center Director | (000) 000-0000
+horizontalLine,LDS Apps
+linkWithSpace,<IMG> Gospel Library | https://www.churchofjesuschrist.org/learn/mobile-applications/gospel-library?lang=eng | https://www.churchofjesuschrist.org/imgs/2fc43d5ac50d11ed9c00eeeeac1e68389ccf488f/full/!200%2C200/0/default
+linkWithSpace,<IMG> Gospel Stream App | https://www.churchofjesuschrist.org/learn/gospel-stream-mobile-and-ott-app?lang=eng | https://www.churchofjesuschrist.org/imgs/1defb046330311eebde7eeeeac1e2458428d21d7/full/!200%2C200/0/default

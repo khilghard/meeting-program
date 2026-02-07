@@ -5,7 +5,10 @@ window.__VITEST__ = true;
 
 // Mock sanitize.js
 vi.mock("../js/sanitize.js", () => ({
-    sanitizeEntry: vi.fn((key, value) => ({ key, value })),
+    sanitizeEntry: vi.fn((key, value) => {
+        if (!key || !key.trim()) return null;
+        return { key: key.trim(), value: value || "" };
+    }),
     isSafeUrl: vi.fn((url) => url.startsWith("http"))
 }));
 
@@ -32,20 +35,29 @@ const {
     init,
     fetchSheet,
     parseCSV,
-    renderers
+    renderers,
+    fetchWithTimeout
 } = Main;
 
 // ------------------------------------------------------------
 // 4. Global beforeEach — DOM, mocks, fetch, URL, localStorage
 // ------------------------------------------------------------
 beforeEach(() => {
+    // Mock window.scrollTo since JSDOM doesn't implement it
+    window.scrollTo = vi.fn();
+
     document.body.innerHTML = `
+    <header id="program-header" class="hidden">
+        <h2 class="sacrament-unit-header-h2"><span id="unitname"></span></h2>
+        <h6 class="sacrament-unit-header-h6"><span id="unitaddress"></span></h6>
+        <p id="date"></p>
+    </header>
+    <div id="offline-banner" hidden></div>
     <div id="main-program"></div>
     <button id="qr-action-btn"></button>
-    <div id="program-header"></div>
-    <div id="unitname"></div>
-    <div id="unitaddress"></div>
-    <div id="date"></div>
+    <button id="reload-btn" class="hidden"></button>
+    <div id="app-version"></div>
+    <div id="last-updated" class="hidden"></div>
   `;
 
     vi.clearAllMocks();
@@ -54,6 +66,11 @@ beforeEach(() => {
 
     delete window.location;
     window.location = new URL("https://example.com/");
+});
+
+import { afterEach } from "vitest";
+afterEach(() => {
+    vi.useRealTimers();
 });
 
 // ------------------------------------------------------------
@@ -200,43 +217,175 @@ describe("fetchSheet()", () => {
 
 // ---------- parseCSV ----------
 describe("parseCSV()", () => {
-    test("parses CSV", () => {
+    test("parses simple CSV", () => {
         const csv = "key,value\nspeaker,Alice";
         expect(parseCSV(csv)).toEqual([{ key: "speaker", value: "Alice" }]);
+    });
+
+    test("handles tilde to comma replacement", () => {
+        const csv = "key,value\nunitAddress,123 Main St~ City US";
+        expect(parseCSV(csv)).toEqual([{ key: "unitAddress", value: "123 Main St, City US" }]);
+    });
+
+    test("handles empty lines", () => {
+        const csv = "key,value\nspeaker,Alice\n\nunitName,My Ward";
+        expect(parseCSV(csv)).toHaveLength(2);
+    });
+
+    test("handles Unicode characters", () => {
+        const csv = "key,value\nspeaker,José Múñoz 🎵";
+        const result = parseCSV(csv);
+        expect(result[0].value).toBe("José Múñoz 🎵");
+    });
+
+    // These tests reflect currently failing/unsupported behavior that we plan to fix in Phase 2.1
+    describe("RFC 4180 Compliance (Planned Improvements)", () => {
+        test("handles quoted commas in values", () => {
+            const csv = 'key,value\nspeaker,"Smith, John"';
+            const result = parseCSV(csv);
+            expect(result[0].key).toBe("speaker");
+            expect(result[0].value).toBe("Smith, John");
+        });
+
+        test("handles escaped quotes", () => {
+            const csv = 'key,value\ngeneralStatement,"He said ""Hello"""';
+            const result = parseCSV(csv);
+            expect(result[0].value).toBe('He said "Hello"');
+        });
     });
 });
 
 describe("renderLineBreak()", () => {
-  test("renders horizontal line", () => {
-  Main.renderLineBreak("Announcements");
-  const line = document.querySelector("#main-program > hr");
-  expect(line.getAttribute("data-content")).toBe("Announcements");
-  });
+    test("renders horizontal line", () => {
+        Main.renderLineBreak("Announcements");
+        const line = document.querySelector("#main-program > hr");
+        expect(line.getAttribute("data-content")).toBe("Announcements");
+    });
 });
 
 describe("renderDate()", () => {
-  test("renders date", async () => {
-  Main.renderDate("2024-01-01");
-  const dateElement = document.querySelector("#date");
-  expect(dateElement).not.toBeNull();
-  expect(dateElement.textContent).toBe("2024-01-01");
-  });
+    test("renders date", async () => {
+        Main.renderDate("2024-01-01");
+        const dateElement = document.querySelector("#date");
+        expect(dateElement).not.toBeNull();
+        expect(dateElement.textContent).toBe("2024-01-01");
+    });
 });
 
 describe("renderUnitAddress()", () => {
-  test("renders unit address", async () => {
-  Main.renderUnitAddress("123 Main St");
-  const addressElement = document.querySelector("#unitaddress");
-  expect(addressElement).not.toBeNull();
-  expect(addressElement.textContent).toBe("123 Main St");
-  });
+    test("renders unit address", async () => {
+        Main.renderUnitAddress("123 Main St");
+        const addressElement = document.querySelector("#unitaddress");
+        expect(addressElement).not.toBeNull();
+        expect(addressElement.textContent).toBe("123 Main St");
+    });
 });
 
 describe("renderUnitName()", () => {
-  test("renders unit name", async () => {
-  Main.renderUnitName("Unit A");
-  const nameElement = document.querySelector("#unitname");
-  expect(nameElement).not.toBeNull();
-  expect(nameElement.textContent).toBe("Unit A");
-  });
+    test("renders unit name", async () => {
+        Main.renderUnitName("Unit A");
+        const nameElement = document.querySelector("#unitname");
+        expect(nameElement).not.toBeNull();
+        expect(nameElement.textContent).toBe("Unit A");
+    });
+});
+
+// ---------- Error Handling & Networking ----------
+describe("Networking & Errors", () => {
+    beforeEach(() => {
+        global.fetch = vi.fn();
+    });
+
+    describe("fetchSheet()", () => {
+        test("handles HTTP 404 error", async () => {
+            global.fetch.mockResolvedValue({
+                ok: false,
+                status: 404,
+                text: () => Promise.resolve("Not Found")
+            });
+
+            await expect(Main.fetchSheet("https://docs.google.com/spreadsheets/d/nonexistent")).rejects.toThrow(/status: 404/);
+        });
+
+        test("handles network failure", async () => {
+            global.fetch.mockRejectedValue(new Error("Network Error"));
+            await expect(Main.fetchSheet("https://docs.google.com/spreadsheets/d/test")).rejects.toThrow("Network Error");
+        });
+    });
+
+    describe("fetchWithTimeout()", () => {
+        test("resolves on success", async () => {
+            global.fetch.mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve("data")
+            });
+            const result = await Main.fetchWithTimeout("https://example.com", 1000);
+            expect(result).toBe("data");
+        });
+
+        test("rejects on timeout", async () => {
+            vi.useFakeTimers();
+            // Mock fetch to respect the abort signal
+            global.fetch.mockImplementation((url, { signal }) => {
+                return new Promise((resolve, reject) => {
+                    if (signal.aborted) {
+                        const err = new Error("Aborted");
+                        err.name = "AbortError";
+                        return reject(err);
+                    }
+                    signal.addEventListener("abort", () => {
+                        const err = new Error("Aborted");
+                        err.name = "AbortError";
+                        reject(err);
+                    });
+                });
+            });
+
+            const promise = fetchWithTimeout("https://example.com", 100);
+
+            vi.advanceTimersByTime(150);
+
+            await expect(promise).rejects.toThrow(/timeout/i);
+            vi.useRealTimers();
+        });
+    });
+
+    describe("init()", () => {
+        test("loads from sheetUrl if present in localStorage", async () => {
+            const url = "https://docs.google.com/spreadsheets/d/test";
+            localStorage.setItem("sheetUrl", url);
+            global.fetch.mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve("key,value\nspeaker,Alice")
+            });
+
+            await init();
+
+            expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("test"), expect.anything());
+            expect(document.querySelector("#speaker")).not.toBeNull();
+        });
+
+        test("falls back to cache if fetch fails", async () => {
+            localStorage.setItem("sheetUrl", "https://docs.google.com/spreadsheets/d/test");
+            localStorage.setItem("programCache", JSON.stringify([{ key: "speaker", value: "Cached Alice" }]));
+            global.fetch.mockRejectedValue(new Error("Offline"));
+
+            await init();
+
+            const speakerVal = document.querySelector("#speaker .value-on-right");
+            expect(speakerVal).not.toBeNull();
+            expect(speakerVal.textContent).toBe("Cached Alice");
+        });
+
+        test("shows offline banner when using cache", async () => {
+            localStorage.setItem("sheetUrl", "https://docs.google.com/spreadsheets/d/test");
+            localStorage.setItem("programCache", JSON.stringify([{ key: "speaker", value: "Cached Alice" }]));
+            global.fetch.mockRejectedValue(new Error("Offline"));
+
+            await init();
+
+            const banner = document.getElementById("offline-banner");
+            expect(banner.classList.contains("visible")).toBe(true);
+        });
+    });
 });

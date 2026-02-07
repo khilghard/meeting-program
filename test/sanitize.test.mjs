@@ -1,56 +1,94 @@
+import { describe, test, expect } from "vitest";
 import { sanitizeValue, sanitizeEntry, isSafeUrl } from "../js/sanitize.js";
 
-function assert(name, condition) {
-  if (!condition) {
-    console.error("❌ FAIL:", name);
-  } else {
-    console.log("✅ PASS:", name);
-  }
-}
+describe("Sanitization Module", () => {
+  describe("sanitizeValue()", () => {
+    test("Strip HTML tags", () => {
+      expect(sanitizeValue("<b>bold</b>")).toBe("bold");
+    });
 
-test("Strip HTML tags", () => {
-  expect(sanitizeValue("<b>bold</b>")).toBe("bold");
-});
+    test("Allow normal text", () => {
+      expect(sanitizeValue("Hello World")).toBe("Hello World");
+    });
 
-test("Allow normal text", () => {
-  expect(sanitizeValue("Hello World")).toBe("Hello World");
-});
+    test("Allow LINK placeholder", () => {
+      expect(sanitizeValue("See <LINK> here")).toBe("See <LINK> here");
+    });
 
-test("Allow LINK placeholder", () => {
-  expect(sanitizeValue("See <LINK> here")).toBe("See <LINK> here");
-});
+    test("Allow IMG placeholder", () => {
+      expect(sanitizeValue("<IMG> Gospel Library")).toBe("<IMG> Gospel Library");
+    });
 
-test("Allow IMG placeholder", () => {
-  expect(sanitizeValue("<IMG> Gospel Library")).toBe("<IMG> Gospel Library");
-});
+    test("Block script tag", () => {
+      expect(sanitizeValue("<script>alert(1)</script>")).toBe("");
+    });
 
-test("Block script tag", () => {
-  expect(sanitizeValue("<script>alert(1)</script>")).toBe("");
-});
+    test("Block style tag", () => {
+      expect(sanitizeValue("<style>body { color: red; }</style>")).toBe("");
+    });
 
-test("Valid URL https", () => {
-  expect(isSafeUrl("https://example.com")).toBe(true);
-});
+    test("Block iframe tag", () => {
+      expect(sanitizeValue("<iframe src='https://malicious.com'></iframe>")).toBe("");
+    });
 
-test("Valid URL http", () => {
-  expect(isSafeUrl("http://example.com")).toBe(true);
-});
+    test("Handle null input", () => {
+      expect(sanitizeValue(null)).toBe("");
+    });
 
-test("Block javascript URL", () => {
-  expect(isSafeUrl("javascript:alert(1)")).toBe(false);
-});
+    test("Handle undefined input", () => {
+      expect(sanitizeValue(undefined)).toBe("");
+    });
 
-test("Allowed key unitName", () => {
-  const entry = sanitizeEntry("unitName", "My Ward");
-  expect(entry.key).toBe("unitName");
-});
+    test("Handle mixed case tags", () => {
+      expect(sanitizeValue("<sCrIpT>alert(1)</ScRiPt>")).toBe("");
+    });
 
-test("Dynamic speaker key", () => {
-  const entry = sanitizeEntry("speaker1", "John Doe");
-  expect(entry.key).toBe("speaker");
-});
+    test("Preserve Unicode and Emojis", () => {
+      const text = "José 🎵";
+      expect(sanitizeValue(text)).toBe(text);
+    });
+  });
 
-test("Unknown key blocked", () => {
-  const entry = sanitizeEntry("evilKey", "test");
-  expect(entry).toBe(null);
+  describe("isSafeUrl()", () => {
+    test("Valid URL https", () => {
+      expect(isSafeUrl("https://example.com")).toBe(true);
+    });
+
+    test("Valid URL http", () => {
+      expect(isSafeUrl("http://example.com")).toBe(true);
+    });
+
+    test("Block javascript URL", () => {
+      expect(isSafeUrl("javascript:alert(1)")).toBe(false);
+    });
+
+    test("Block data URL (potential XSS)", () => {
+      expect(isSafeUrl("data:text/html,<script>alert(1)</script>")).toBe(false);
+    });
+  });
+
+  describe("sanitizeEntry()", () => {
+    test("Allowed key unitName", () => {
+      const entry = sanitizeEntry("unitName", "My Ward");
+      expect(entry.key).toBe("unitName");
+      expect(entry.value).toBe("My Ward");
+    });
+
+    test("Dynamic speaker key", () => {
+      const entry = sanitizeEntry("speaker1", "John Doe");
+      expect(entry.key).toBe("speaker");
+      expect(entry.value).toBe("John Doe");
+    });
+
+    test("Unknown key blocked", () => {
+      const entry = sanitizeEntry("evilKey", "test");
+      expect(entry).toBe(null);
+    });
+
+    test("Trims keys and values", () => {
+      const entry = sanitizeEntry("  unitName  ", "  My Ward  ");
+      expect(entry.key).toBe("unitName");
+      expect(entry.value).toBe("My Ward");
+    });
+  });
 });

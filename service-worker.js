@@ -1,12 +1,14 @@
 var MPPATH = "/meeting-program";
 var APP_PREFIX = "smpwa_";
-var VERSION = "v1";
+var VERSION = "v2";
 var URLS = [
   `${MPPATH}/index.html`,
   `${MPPATH}/css/styles.css`,
   `${MPPATH}/img/icon.png`,
   `${MPPATH}/img/favicon.png`,
-  `${MPPATH}/js/app.js`,
+  `${MPPATH}/js/main.js`,
+  `${MPPATH}/js/qr.js`,
+  `${MPPATH}/js/sanitize.js`,
   `${MPPATH}/manifest.webmanifest`,
   "https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"
 ];

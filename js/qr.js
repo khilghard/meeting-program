@@ -5,21 +5,36 @@
 let qrStream = null;
 let lastScanTime = 0;
 
-const qrSection = document.getElementById("qr-scanner");
-const video = document.getElementById("qr-video");
-const canvas = document.getElementById("qr-canvas");
-const output = document.getElementById("qr-output");
-const ctx = canvas.getContext("2d");
+let qrSection, video, canvas, output, ctx;
 
+export function initDOMElements() {
+  qrSection = document.getElementById("qr-scanner");
+  video = document.getElementById("qr-video");
+  canvas = document.getElementById("qr-canvas");
+  output = document.getElementById("qr-output");
+  if (canvas) ctx = canvas.getContext("2d");
+}
+
+export function resetScannerState() {
+  stopQRScanner();
+  qrSection = null;
+  video = null;
+  canvas = null;
+  output = null;
+  ctx = null;
+  lastScanTime = 0;
+}
+
+// ------------------------------------------------------------
 // ------------------------------------------------------------
 // Safari Detection
 // ------------------------------------------------------------
-function isSafari() {
+export function isSafari() {
   const ua = navigator.userAgent.toLowerCase();
   return ua.includes("safari") && !ua.includes("chrome") && !ua.includes("android");
 }
 
-function showSafariCameraHelp() {
+export function showSafariCameraHelp() {
   alert(
     "Safari may have blocked camera access.\n\n" +
     "To enable it:\n" +
@@ -34,7 +49,7 @@ function showSafariCameraHelp() {
 // ------------------------------------------------------------
 // URL Validation
 // ------------------------------------------------------------
-function isValidSheetUrl(url) {
+export function isValidSheetUrl(url) {
   return (
     typeof url === "string" &&
     url.startsWith("https://docs.google.com/spreadsheets/")
@@ -45,6 +60,7 @@ function isValidSheetUrl(url) {
 // Public API
 // ------------------------------------------------------------
 export function showScanner() {
+  initDOMElements();
   qrSection.hidden = false;
   startQRScanner();
 
@@ -60,6 +76,7 @@ export function showScanner() {
 }
 
 export function hideScanner() {
+  initDOMElements();
   qrSection.hidden = true;
   stopQRScanner();
 
@@ -78,7 +95,8 @@ export function hideScanner() {
 // ------------------------------------------------------------
 // Start camera + scanning loop
 // ------------------------------------------------------------
-async function startQRScanner() {
+export async function startQRScanner() {
+  initDOMElements();
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       output.textContent = "Camera access is not available in this browser.";
@@ -110,7 +128,7 @@ async function startQRScanner() {
 // ------------------------------------------------------------
 // Stop camera
 // ------------------------------------------------------------
-function stopQRScanner() {
+export function stopQRScanner() {
   if (qrStream) {
     qrStream.getTracks().forEach(t => t.stop());
     qrStream = null;
@@ -120,7 +138,7 @@ function stopQRScanner() {
 // ------------------------------------------------------------
 // Scan loop
 // ------------------------------------------------------------
-function scanFrame(timestamp) {
+export function scanFrame(timestamp) {
   if (!qrStream) return;
 
   // Limit scanning to ~6–7 fps
@@ -131,6 +149,7 @@ function scanFrame(timestamp) {
   lastScanTime = timestamp;
 
   if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    initDOMElements();
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
@@ -159,7 +178,7 @@ function scanFrame(timestamp) {
 // ------------------------------------------------------------
 // Handle scanned URL
 // ------------------------------------------------------------
-function handleScannedUrl(url) {
+export function handleScannedUrl(url) {
   output.textContent = "Scanned URL: " + url;
 
   // Persist until next scan

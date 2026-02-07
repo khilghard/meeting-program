@@ -14,41 +14,57 @@
 <body>
 
   <!-- MAIN APP ROOT -->
-  <main id="app"></main>
+  <div id="app"></div>
 
   <!-- HEADER SECTION -->
   <header id="program-header" class="hidden">
-    <svg xmlns="http://www.w3.org/2000/svg" width="800" height="160" viewBox="0 0 800 160" role="img"
-      aria-labelledby="title desc" class="header church-name-header">
-      <title id="title">The Church of Jesus Christ of Latter-day Saints</title>
-      <desc id="desc">
-        Dignified text rendering of the Church name with line wrapping, not an official wordmark.
-      </desc>
 
-      <rect width="100%" height="100%" fill="#127eba" />
+    <!-- Church Name (full bleed) -->
+    <div class="header-section full-bleed">
+      <svg xmlns="http://www.w3.org/2000/svg" width="800" height="160" viewBox="0 0 800 160" role="img"
+        aria-labelledby="title desc" class="church-name-header">
+        <title id="title">The Church of Jesus Christ of Latter-day Saints</title>
+        <desc id="desc">Dignified text rendering of the Church name.</desc>
 
-      <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
-        font-family="Georgia, 'Times New Roman', Times, serif" font-size="60" fill="#ffffff">
-        <tspan x="50%" dy="-0.6em">The Church of Jesus Christ</tspan>
-        <tspan x="50%" dy="1.2em">of Latter-day Saints</tspan>
-      </text>
-    </svg>
+        <rect width="100%" height="100%" class="church-svg-bg" />
+        <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
+          font-family="Georgia, 'Times New Roman', Times, serif" font-size="60" class="church-svg-text">
+          <tspan x="50%" dy="-0.6em">The Church of Jesus Christ</tspan>
+          <tspan x="50%" dy="1.2em">of Latter-day Saints</tspan>
+        </text>
+      </svg>
+    </div>
 
-    <span class="header-inner" style="top: -10px; height: 60px;">Welcome to</span>
+    <!-- Welcome Bar (full bleed) -->
+    <div class="header-section full-bleed welcome-bar">
+      Welcome to
+      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle Dark Mode">🌓</button>
+    </div>
 
+    <!-- Offline Banner (normal width) -->
+    <div id="offline-banner" class="offline-banner">
+      Showing last available program (offline mode) &nbsp;
+      <a href="#" id="retry-offline" style="color: inherit; text-decoration: underline;">Try Now</a>
+    </div>
+
+    <!-- Sacrament Header (normal width, toggle anchored here) -->
     <div class="sacrament-unit-header">
       <h1>Sacrament Services</h1>
       <h2 class="sacrament-unit-header-h2"><span id="unitname"></span></h2>
-      <h6 class="sacrament-unit-header-h6"><span id="unitaddress"></span></h6>
-      <p id="date"></p>
+      <h3 class="sacrament-unit-header-h6"><span id="unitaddress"></span></h3>
+      <p id="date" style="padding-top: 15px;"></p>
     </div>
+
   </header>
 
-  <div id="offline-banner" hidden class="offline-banner"> Showing last available program (offline mode) </div>
-
-  <div id="page-container">
+  <main id="page-container">
     <!-- PROGRAM CONTENT -->
     <div id="main-program"></div>
+
+    <div class="loading-container">
+      <div class="spinner"></div>
+      <div class="loading-text">Loading Program...</div>
+    </div>
 
     <!-- QR ACTION BUTTON (dynamic text + behavior handled in main.js) -->
     <button id="qr-action-btn" class="qr-action-btn"></button>
@@ -68,7 +84,7 @@
       <canvas id="qr-canvas" hidden></canvas>
       <div id="qr-output"></div>
     </section>
-  </div>
+  </main>
 
   <!-- MODULES -->
   <script type="module" src="js/main.js"></script>
@@ -110,7 +126,7 @@
 
 <footer>
   <div class="footer-container">
-    <div id="app-version" class="app-version">v1.0.3</div>
+    <div id="app-version" class="app-version">v1.1.0</div>
     <div id="last-updated" class="last-updated hidden"></div>
   </div>
 </footer>
