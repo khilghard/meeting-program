@@ -612,6 +612,7 @@ This guarantees that the program members see on Sunday matches what you intended
 | key                     | value                                                                                                                                                     |
 |-------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
 | unitName                | Unit Name                                                                                                                                                 |
+| stakeName               | Stake Name                                                                                                                                                 |
 | unitAddress             | 123 Actual Ave~ City US 123245                                                                                                                            |
 | link                    | Homepage \| <OfficialHomePageLink>                                                                                                                        |
 | date                    | January 1~ 2026                                                                                                                                            |
