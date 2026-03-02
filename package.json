@@ -1,41 +1,9 @@
 {
-  "type": "module",
+  "name": "qr-scanner",
+  "version": "1.0.0",
+  "description": "Simple QR code scanner and generator",
   "scripts": {
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "husky": "husky install",
-    "dev": "node server.cjs",
-    "test": "vitest",
-    "test:run": "vitest --run",
-    "test:coverage": "vitest --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug"
-  },
-  "lint-staged": {
-    "*.js": "eslint --fix"
-  },
-  "dependencies": {
-    "@eslint/js": "^10.0.1",
-    "express": "^5.2.1"
-  },
-  "devDependencies": {
-    "@axe-core/playwright": "^4.11.1",
-    "@peculiar/webcrypto": "^1.5.0",
-    "@playwright/test": "^1.58.2",
-    "@vitest/coverage-v8": "^4.0.18",
-    "eslint": "^10.0.2",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-import": "^2.32.0",
-    "fake-indexeddb": "^6.2.5",
-    "husky": "^9.1.7",
-    "jsdom": "^28.1.0",
-    "lint-staged": "^16.3.0",
-    "prettier": "^3.8.1",
-    "qrcode": "^1.5.4",
-    "vitest": "^4.0.18"
+    "dev": "npx serve -l 8000",
+    "ssl": "python3 server-https.py"
   }
 }
