@@ -1,7 +1,7 @@
 // ------------------------------------------------------------
 // QR Scanner Module
 // ------------------------------------------------------------
-/* eslint-disable no-undef */
+ 
 
 import { t } from "./i18n/index.js";
 
@@ -135,45 +135,79 @@ export function showManualUrlEntry() {
 
   if (!manualBtn || !manualContainer) return;
 
+  manualContainer.hidden = true;
+  manualContainer.classList.add("hidden");
+
+  if (manualInput) {
+    manualInput.value = "";
+    manualInput.placeholder = t("enterSheetUrl");
+  }
+
+  if (manualSubmit) {
+    manualSubmit.textContent = t("add");
+  }
+
   if (manualBtn) {
     manualBtn.hidden = false;
     manualBtn.classList.remove("hidden");
     manualBtn.textContent = t("enterSheetUrlManually");
-    manualBtn.onclick = () => {
-      manualBtn.hidden = true;
-      manualBtn.classList.add("hidden");
-      if (manualContainer) {
-        manualContainer.hidden = false;
-        manualContainer.classList.remove("hidden");
-      }
-      if (manualInput) {
-        manualInput.placeholder = t("enterSheetUrl");
-        manualInput.focus();
-      }
-      if (manualSubmit) {
-        manualSubmit.textContent = t("add");
-      }
-    };
+    manualBtn.onclick = () => openManualUrlInput();
   }
 
   if (manualSubmit) {
     manualSubmit.onclick = async () => {
       const url = manualInput?.value?.trim() || "";
+      console.log("[QR] Manual add submitted", {
+        inputLength: url.length,
+        looksLikeSheetUrl: isValidSheetUrl(url)
+      });
+
       if (isValidSheetUrl(url)) {
+        console.log("[QR] Manual add accepted, routing through scanned URL handler");
         handleScannedUrl(url);
-        if (manualContainer) manualContainer.hidden = true;
+        if (manualContainer) {
+          manualContainer.hidden = true;
+          manualContainer.classList.add("hidden");
+        }
       } else {
+        console.warn("[QR] Manual add rejected due to invalid sheet URL", url);
         output.textContent = t("invalidSheetUrl");
       }
     };
   }
 
   if (manualInput) {
-    manualInput.addEventListener("keypress", (e) => {
+    manualInput.onkeypress = (e) => {
       if (e.key === "Enter" && manualSubmit) {
         manualSubmit.click();
       }
-    });
+    };
+  }
+}
+
+function openManualUrlInput() {
+  const manualBtn = document.getElementById("manual-url-btn");
+  const manualContainer = document.getElementById("manual-url-container");
+  const manualInput = document.getElementById("manual-url-input");
+  const manualSubmit = document.getElementById("manual-url-submit");
+
+  if (manualBtn) {
+    manualBtn.hidden = true;
+    manualBtn.classList.add("hidden");
+  }
+
+  if (manualContainer) {
+    manualContainer.hidden = false;
+    manualContainer.classList.remove("hidden");
+  }
+
+  if (manualInput) {
+    manualInput.placeholder = t("enterSheetUrl");
+    manualInput.focus();
+  }
+
+  if (manualSubmit) {
+    manualSubmit.textContent = t("add");
   }
 }
 
@@ -199,6 +233,7 @@ export function hideManualUrlEntry() {
 export function showScanner() {
   initDOMElements();
   if (qrSection) qrSection.hidden = false;
+  showManualUrlEntry();
   startQRScanner();
 
   // Scroll into view once camera metadata is ready
@@ -246,6 +281,8 @@ export async function startQRScanner() {
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
       output.textContent = t("cameraUnavailable");
+      showManualUrlEntry();
+      openManualUrlInput();
       return;
     }
 
@@ -261,13 +298,15 @@ export async function startQRScanner() {
   } catch (err) {
     console.error("Camera error:", err);
 
+    showManualUrlEntry();
+    openManualUrlInput();
+
     if (isSafari() && (err.name === "NotAllowedError" || err.name === "NotReadableError")) {
       showSafariCameraHelp();
       return;
     }
 
     output.textContent = t("cameraDenied");
-    showManualUrlEntry();
   }
 }
 
@@ -412,6 +451,10 @@ export function scanFrame(timestamp) {
 // ------------------------------------------------------------
 export function handleScannedUrl(url) {
   const sheetUrl = extractSheetUrl(url) || url;
+  console.log("[QR] Routing scanned URL", {
+    rawUrl: url,
+    resolvedSheetUrl: sheetUrl
+  });
   output.textContent = t("scannedUrl") + " " + sheetUrl;
   stopQRScanner();
 

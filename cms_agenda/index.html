@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Program Agenda CMS" />
+    <title>Program Agenda CMS</title>
+    <script>
+      // Detect deployment path from URL to build absolute paths
+      (function detectBasePath() {
+        const pathname = window.location.pathname;
+        let basePath = "/";
+        if (pathname.includes("/meeting-program-dev/")) {
+          basePath = "/meeting-program-dev/";
+        } else if (pathname.includes("/meeting-program/")) {
+          basePath = "/meeting-program/";
+        }
+        window.CMS_BASE_PATH = basePath;
+      })();
+
+      // Apply theme IMMEDIATELY before page render (inlined from theme-early.js)
+      (function applyThemeImmediately() {
+        try {
+          const storedTheme = localStorage.getItem("userPreference_theme");
+          const systemIsDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const theme = storedTheme || (systemIsDark ? "dark" : "light");
+          document.documentElement.dataset.theme = theme;
+          const criticalCSS = `
+            :root {
+              --bg-color: #ffffff;
+              --text-color: #333333;
+              --card-bg: #fafafa;
+              --header-bg: #0d659e;
+              --header-text: #ffffff;
+              --accent-color: #0d659e;
+              --accent-hover: #004a9c;
+              --dots-color: #444444;
+              --offline-bg: #f8d7da;
+              --offline-text: #7a1f24;
+              --hr-line: #555555;
+              --link-color: #004a9c;
+              --accent-text: #ffffff;
+              --transition-speed: 0.3s;
+              --max-width: 600px;
+            }
+            [data-theme="dark"] {
+              --bg-color: #121212;
+              --text-color: #e0e0e0;
+              --card-bg: #1e1e1e;
+              --header-bg: #0d47a1;
+              --header-text: #ffffff;
+              --accent-color: #90caf9;
+              --accent-hover: #64b5f6;
+              --dots-color: #bbbbbb;
+              --offline-bg: #442222;
+              --offline-text: #ffb7b7;
+              --hr-line: #666666;
+              --link-color: #90caf9;
+            }
+            body {
+              background-color: var(--bg-color);
+              color: var(--text-color);
+              transition: background-color 0.2s, color 0.2s;
+            }
+          `;
+          const style = document.createElement("style");
+          style.textContent = criticalCSS;
+          document.head.appendChild(style);
+        } catch (e) {}
+      })();
+    </script>
+    <script src="https://accounts.google.com/gsi/client" defer></script>
+    <script>
+      window.GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+    </script>
+    <link id="styles-link" rel="stylesheet" href="" />
+    <link id="cms-styles-link" rel="stylesheet" href="" />
+    <link id="cms-agenda-styles-link" rel="stylesheet" href="" />
+    <script type="module">
+      const bp = window.CMS_BASE_PATH || "/";
+      const { VERSION } = await import(`${bp}js/version.js`);
+
+      document.getElementById("styles-link").href = `${bp}css/styles.css?v=${VERSION}`;
+      document.getElementById("cms-styles-link").href = `${bp}css/cms.css?v=${VERSION}`;
+      document.getElementById("cms-agenda-styles-link").href = `${bp}css/cms-agenda.css?v=${VERSION}`;
+
+      const agendaScript = document.createElement("script");
+      agendaScript.type = "module";
+      agendaScript.src = `${bp}js/cms-agenda.js?v=${VERSION}`;
+      document.head.appendChild(agendaScript);
+
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        navigator.serviceWorker.register(`${bp}service-worker.js?v=${VERSION}`).catch(error => {
+          console.error("[CMS Agenda] Service worker registration failed", error);
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <main class="cms-agenda">
+      <header class="cms-agenda__header">
+        <div>
+          <p id="cms-agenda-shell-title">Program Agenda CMS</p>
+          <h1 id="cms-agenda-profile-name">Loading profile...</h1>
+          <a id="cms-agenda-home-btn" class="cms-agenda-home-link cms-agenda-btn--secondary" href="../index.html">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3.5 11.5L12 4l8.5 7.5" />
+              <path d="M6.5 10.5V20h11v-9.5" />
+              <path d="M10 20v-5h4v5" />
+            </svg>
+            <span>Return to Home</span>
+          </a>
+        </div>
+      </header>
+
+      <div id="cms-agenda-page-status" class="cms-agenda__status" hidden></div>
+
+      <section id="cms-agenda-auth-panel" class="cms-agenda__auth-panel" hidden>
+        <p id="cms-agenda-auth-message">Tap to sign in again to publish agenda changes.</p>
+        <div class="cms-agenda__actions">
+          <button id="cms-agenda-setup-btn" type="button" class="cms-agenda-btn--secondary">Configure Google Settings</button>
+          <button id="cms-agenda-sign-in-btn" type="button" class="cms-agenda-btn--primary">Sign in with Google</button>
+        </div>
+      </section>
+
+      <dialog id="cms-agenda-setup-modal">
+        <form method="dialog">
+          <h2 id="cms-agenda-setup-title">Google Settings</h2>
+          <label>
+            <span id="cms-agenda-setup-client-id-label">Google Client ID</span>
+            <input id="cms-agenda-setup-client-id" type="text" placeholder="12345.apps.googleusercontent.com" />
+          </label>
+          <label>
+            <span id="cms-agenda-setup-sheet-url-label">Agenda Sheet URL</span>
+            <input id="cms-agenda-setup-sheet-url" type="text" readonly />
+          </label>
+          <p id="cms-agenda-setup-status" class="cms-agenda__status" hidden></p>
+          <div class="cms-agenda__actions">
+            <button id="cms-agenda-setup-cancel-btn" type="button" class="cms-agenda-btn--secondary">Cancel</button>
+            <button id="cms-agenda-setup-save-btn" type="button" class="cms-agenda-btn--primary">Save Settings</button>
+          </div>
+        </form>
+      </dialog>
+
+      <section id="cms-agenda-content" hidden>
+        <div class="cms-agenda__controls">
+          <div class="cms-agenda__controls-main">
+            <label>
+              <span id="cms-agenda-tab-label">Sheet Tab</span>
+              <select id="cms-agenda-tab-select"></select>
+            </label>
+            <label>
+              <span id="cms-agenda-key-label">Agenda Key</span>
+              <select id="cms-agenda-key-select"></select>
+            </label>
+          </div>
+          <label id="cms-agenda-row-field" hidden>
+            <span id="cms-agenda-row-label">Agenda Row</span>
+            <div class="cms-agenda__row-selector">
+              <select id="cms-agenda-row-select"></select>
+              <div class="cms-agenda__row-nav">
+                <button id="cms-agenda-row-prev-btn" type="button" class="cms-agenda-btn--secondary cms-agenda-btn--nav" aria-label="Previous agenda row">&larr;</button>
+                <button id="cms-agenda-row-next-btn" type="button" class="cms-agenda-btn--secondary cms-agenda-btn--nav" aria-label="Next agenda row">&rarr;</button>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <p id="cms-agenda-sheet-row-hint" class="cms-agenda__row-hint" hidden></p>
+        <p id="cms-agenda-key-change-hint" class="cms-agenda__key-change-hint" hidden></p>
+
+        <div class="cms-agenda__actions">
+          <button id="cms-agenda-make-active-btn" type="button" class="cms-agenda-btn--secondary">Make Active</button>
+          <button id="cms-agenda-sign-in-again-btn" type="button" class="cms-agenda-btn--secondary">Sign in with Google</button>
+          <button id="cms-agenda-save-draft-btn" type="button" class="cms-agenda-btn--secondary">Save Draft</button>
+          <button id="cms-agenda-discard-draft-btn" type="button" class="cms-agenda-btn--secondary">Discard Draft</button>
+          <button id="cms-agenda-publish-btn" type="button" class="cms-agenda-btn--primary">Publish</button>
+          <button id="cms-agenda-publish-all-btn" type="button" class="cms-agenda-btn--primary">Publish All Pending</button>
+        </div>
+
+        <div id="cms-agenda-editor-container"></div>
+
+        <section class="cms-agenda__panel">
+          <h2 id="cms-agenda-pending-title">Pending Changes</h2>
+          <div id="cms-agenda-pending-list"></div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

@@ -42,6 +42,7 @@ async function ensureInitialized(currentVersion) {
 async function refreshCache() {
   cache.profiles = await pmGetProfiles();
   cache.selectedId = await pmGetSelectedProfileId();
+
   cache.currentProfile = cache.selectedId
     ? cache.profiles.find((p) => p.id === cache.selectedId) || null
     : null;

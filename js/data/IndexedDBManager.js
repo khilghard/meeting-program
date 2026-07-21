@@ -6,10 +6,29 @@
  * and safe upgrades for existing users.
  */
 
-import db, { DB_NAME, DB_SCHEMA_VERSION } from "./db.js";
+import { db, DB_NAME, DB_SCHEMA_VERSION } from "./db.js";
 
 const DB_VERSION = DB_SCHEMA_VERSION;
-const STORES = ["profiles", "archives", "metadata", "migrations", "history"];
+const STORES = ["profiles", "archives", "metadata", "migrations", "history", "drafts"];
+
+function getDraftProfileId(key) {
+  if (typeof key !== "string") {
+    throw new Error("Draft key must be a string");
+  }
+
+  const prefixes = ["cms_draft_", "agenda_draft_"];
+  const prefix = prefixes.find((value) => key.startsWith(value));
+  if (!prefix) {
+    throw new Error("Invalid draft key format");
+  }
+
+  const profileId = key.slice(prefix.length);
+  if (!profileId) {
+    throw new Error("Draft key must include a profile ID");
+  }
+
+  return profileId;
+}
 
 // Open the database - Dexie handles the version check and upgrade automatically
 async function createDatabase() {
@@ -83,6 +102,11 @@ async function clearAllArchives() {
   return true;
 }
 
+async function clearProfileDrafts(profileId) {
+  await db.drafts.where("profileId").equals(profileId).delete();
+  return true;
+}
+
 async function getMetadata(key) {
   const entry = await db.metadata.get(key);
   return entry ? entry.value : null;
@@ -147,15 +171,23 @@ async function cleanupOldArchives(days) {
 async function calculateChecksum(data) {
   if (!data) return "";
 
-  // If data is already a string, use it; otherwise stringify it
   const dataStr = typeof data === "string" ? data : JSON.stringify(data);
 
-  const encoder = new TextEncoder();
-  const dataBuffer = encoder.encode(dataStr);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", dataBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  return hashHex;
+  // Use SubtleCrypto when available (secure contexts: HTTPS/localhost)
+  if (crypto?.subtle) {
+    const encoder = new TextEncoder();
+    const dataBuffer = encoder.encode(dataStr);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", dataBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Fallback for non-secure contexts (e.g. iOS Home Screen over HTTP)
+  let hash = 0;
+  for (let i = 0; i < dataStr.length; i++) {
+    hash = (hash * 31 + dataStr.charCodeAt(i)) | 0;
+  }
+  return "djb2-" + (hash >>> 0).toString(16);
 }
 
 async function getArchiveWithValidation(profileId, programDate) {
@@ -229,6 +261,26 @@ async function removeCorruptedArchive(profileId, programDate) {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Drafts — CMS auto-save (AD-04)
+// Key pattern: 'cms_draft_${profileId}' | 'agenda_draft_${profileId}'
+// ---------------------------------------------------------------------------
+
+async function getDraft(key) {
+  const entry = await db.drafts.get(key);
+  return entry ? entry.data : null;
+}
+
+async function saveDraft(key, data) {
+  await db.drafts.put({ id: key, profileId: getDraftProfileId(key), data, updatedAt: Date.now() });
+  return true;
+}
+
+async function clearDraft(key) {
+  await db.drafts.delete(key);
+  return true;
+}
+
 async function resetDatabase() {
   await db.delete();
   return new Promise((resolve, reject) => {
@@ -256,6 +308,7 @@ export {
   deleteArchive,
   clearProfileArchives,
   clearAllArchives,
+  clearProfileDrafts,
   getMetadata,
   setMetadata,
   getMigration,
@@ -266,5 +319,8 @@ export {
   getArchiveWithValidation,
   getStorageIntegrity,
   removeCorruptedArchive,
+  getDraft,
+  saveDraft,
+  clearDraft,
   db // Export the Dexie instance for direct access if needed
 };

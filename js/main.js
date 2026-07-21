@@ -9,6 +9,7 @@ import { isSafeUrl } from "./sanitize.js";
 import { createWorker } from "./workers/workerInterface.js";
 import { initConsoleCapture } from "./utils/console-capture.js";
 import { initDiagnosticButton } from "./components/diagnostic-button.js";
+import { isIOS, open as openIOSOnboarding } from "./components/ios-onboarding-modal.js";
 import {
   renderers,
   renderProgram,
@@ -112,14 +113,78 @@ function showOfflineBanner() {
   };
 }
 
+let networkReachableOverride = false;
+let networkStatusUpdater = null;
+let hasConfirmedOffline = false;
+let networkStatusHideTimer = null;
+let networkOnlineListener = null;
+let networkOfflineListener = null;
+let networkStatusSessionId = 0;
+
+function logNetworkStatus(message, details = {}) {
+  const navigatorOnline = typeof navigator !== "undefined" ? navigator.onLine : "[unavailable]";
+  console.log("[NetworkStatus]", message, {
+    navigatorOnline,
+    networkReachableOverride,
+    hasConfirmedOffline,
+    ...details
+  });
+}
+
+function syncNetworkReachability({
+  reachable,
+  showOnlineNotice = false,
+  confirmOffline = false,
+  source = "unknown"
+} = {}) {
+  if (typeof reachable === "boolean") {
+    networkReachableOverride = reachable;
+  }
+
+  if (confirmOffline) {
+    hasConfirmedOffline = true;
+  }
+
+  if (typeof reachable === "boolean") {
+    logNetworkStatus(reachable ? "Reachability confirmed" : "Reachability lost", {
+      source,
+      showOnlineNotice,
+      confirmOffline
+    });
+
+    if (reachable && typeof navigator !== "undefined" && navigator.onLine === false) {
+      logNetworkStatus("Successful network activity despite navigator.onLine=false", { source });
+    }
+  }
+
+  if (typeof networkStatusUpdater === "function") {
+    void networkStatusUpdater({ showOnlineNotice });
+  }
+}
+
 function initNetworkStatus() {
   const statusEl = document.getElementById("network-status");
   if (!statusEl) return;
 
-  // Timer storage for cleanup
-  let statusHideTimer = null;
+  if (networkOnlineListener) {
+    globalThis.window.removeEventListener("online", networkOnlineListener);
+  }
 
-  const updateStatus = async () => {
+  if (networkOfflineListener) {
+    globalThis.window.removeEventListener("offline", networkOfflineListener);
+  }
+
+  if (networkStatusHideTimer) {
+    clearTimeout(networkStatusHideTimer);
+    networkStatusHideTimer = null;
+  }
+
+  networkReachableOverride = typeof navigator !== "undefined" ? navigator.onLine : false;
+  hasConfirmedOffline = false;
+  networkStatusSessionId += 1;
+  const sessionId = networkStatusSessionId;
+
+  const updateStatus = async ({ showOnlineNotice = false } = {}) => {
     const statusEl = document.getElementById("network-status");
     if (!statusEl) return;
 
@@ -128,26 +193,34 @@ function initNetworkStatus() {
     const lastSyncEl = statusEl.querySelector(".last-sync");
 
     // Guard against navigator not being available
-    const isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+    const isOnline =
+      typeof navigator !== "undefined" ? navigator.onLine || networkReachableOverride : true;
 
     if (isOnline) {
       iconEl.textContent = "🌐";
       textEl.textContent = "Online";
       statusEl.classList.remove("offline");
       statusEl.classList.add("online");
-      statusEl.classList.remove("hidden");
+
+      if (networkStatusHideTimer) clearTimeout(networkStatusHideTimer);
+
+      if (showOnlineNotice && hasConfirmedOffline) {
+        statusEl.classList.remove("hidden");
+        hasConfirmedOffline = false;
+        networkStatusHideTimer = setTimeout(() => {
+          statusEl.classList.add("hidden");
+        }, 3000);
+      } else {
+        statusEl.classList.add("hidden");
+      }
 
       const lastUpdated = await getMetadata("programLastUpdatedDate");
+      if (sessionId !== networkStatusSessionId) return;
       if (lastUpdated) {
         lastSyncEl.textContent = `Last sync: ${lastUpdated}`;
       } else {
         lastSyncEl.textContent = "";
       }
-
-      if (statusHideTimer) clearTimeout(statusHideTimer);
-      statusHideTimer = setTimeout(() => {
-        statusEl.classList.add("hidden");
-      }, 3000);
     } else {
       iconEl.textContent = "📱";
       textEl.textContent = "Working offline";
@@ -155,7 +228,10 @@ function initNetworkStatus() {
       statusEl.classList.add("offline");
       statusEl.classList.remove("hidden");
 
+      if (networkStatusHideTimer) clearTimeout(networkStatusHideTimer);
+
       const lastUpdated = await getMetadata("programLastUpdatedDate");
+      if (sessionId !== networkStatusSessionId) return;
       if (lastUpdated) {
         lastSyncEl.textContent = `Last updated: ${lastUpdated}`;
       } else {
@@ -164,13 +240,26 @@ function initNetworkStatus() {
     }
   };
 
-  globalThis.window.addEventListener("online", () => {
-    updateStatus();
-  });
+  networkStatusUpdater = updateStatus;
 
-  globalThis.window.addEventListener("offline", () => {
-    updateStatus();
-  });
+  networkOnlineListener = () => {
+    syncNetworkReachability({
+      reachable: true,
+      showOnlineNotice: true,
+      source: "browser-online-event"
+    });
+  };
+
+  networkOfflineListener = () => {
+    syncNetworkReachability({
+      reachable: false,
+      confirmOffline: true,
+      source: "browser-offline-event"
+    });
+  };
+
+  globalThis.window.addEventListener("online", networkOnlineListener);
+  globalThis.window.addEventListener("offline", networkOfflineListener);
 
   updateStatus();
 }
@@ -256,13 +345,24 @@ function debounce(func, wait) {
 async function fetchWithTimeout(url, timeout) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
+  const requestUrl = sanitizeSheetUrl(url);
 
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetch(requestUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
+    syncNetworkReachability({
+      reachable: true,
+      showOnlineNotice: true,
+      source: `fetchWithTimeout:${requestUrl}`
+    });
     return response.text();
   } catch (error) {
     clearTimeout(timeoutId);
+    syncNetworkReachability({
+      reachable: false,
+      confirmOffline: true,
+      source: `fetchWithTimeout:${requestUrl}`
+    });
     throw error;
   }
 }
@@ -300,21 +400,59 @@ async function initializePrerequisites(currentVersion) {
 // Helper: Determine the sheet URL to load
 async function determineSheetUrl() {
   const params = new URLSearchParams(globalThis.window.location.search);
-  let sheetUrl = params.get("url");
-
+  const urlParam = params.get("url");
   const currentProfile = Profiles.getCurrentProfile();
+  const localStorageUrl = localStorage.getItem("sheetUrl");
+  let sheetUrl = null;
+  let source = "none";
 
-  if (!currentProfile && !sheetUrl) {
+  if (urlParam) {
+    sheetUrl = urlParam;
+    source = "url-params";
+  }
+
+  if (!sheetUrl && currentProfile?.url) {
+    sheetUrl = currentProfile.url;
+    source = "profile";
+  }
+
+  if (!sheetUrl && localStorageUrl) {
+    sheetUrl = localStorageUrl;
+    source = "localStorage";
+  }
+
+  if (!sheetUrl && !currentProfile) {
     const { getMetadata } = await import("./data/IndexedDBManager.js");
     const legacyUrl = await getMetadata("legacy_sheetUrl");
-    if (legacyUrl) sheetUrl = legacyUrl;
-  } else if (currentProfile && !sheetUrl) {
-    sheetUrl = currentProfile.url;
+    if (legacyUrl) {
+      sheetUrl = legacyUrl;
+      source = "indexeddb-legacy";
+    }
   }
 
   if (sheetUrl) {
+    const originalSheetUrl = sheetUrl;
     const extractedUrl = extractSheetUrl(sheetUrl);
     if (extractedUrl) sheetUrl = extractedUrl;
+
+    console.log("[INIT] determineSheetUrl candidates:", {
+      urlParam: urlParam || "[none]",
+      currentProfileId: currentProfile?.id || "[none]",
+      currentProfileUrl: currentProfile?.url || "[none]",
+      localStorageUrl: localStorageUrl || "[none]",
+      chosenSource: source,
+      originalChosenUrl: originalSheetUrl,
+      finalSheetUrl: sheetUrl
+    });
+  } else {
+    console.log("[INIT] determineSheetUrl candidates:", {
+      urlParam: urlParam || "[none]",
+      currentProfileId: currentProfile?.id || "[none]",
+      currentProfileUrl: currentProfile?.url || "[none]",
+      localStorageUrl: localStorageUrl || "[none]",
+      chosenSource: source,
+      finalSheetUrl: "[none]"
+    });
   }
 
   return sheetUrl;
@@ -344,6 +482,51 @@ function toggleElementClasses(elements, classesToAdd = [], classesToRemove = [])
     classesToAdd.forEach((cls) => el.classList.add(cls));
     classesToRemove.forEach((cls) => el.classList.remove(cls));
   });
+}
+
+function isMobileActionLayout() {
+  return (
+    globalThis.window?.matchMedia?.("(max-width: 600px)")?.matches ??
+    (globalThis.window?.innerWidth ?? Number.MAX_SAFE_INTEGER) <= 600
+  );
+}
+
+async function hasValidGoogleClientId() {
+  const configuredClientId =
+    (await getMetadata("googleClientId")) || globalThis.window?.GOOGLE_CLIENT_ID || "";
+  return Boolean(
+    configuredClientId &&
+      !String(configuredClientId).startsWith("YOUR_GOOGLE_CLIENT_ID") &&
+      String(configuredClientId).includes(".apps.googleusercontent.com")
+  );
+}
+
+function updateAgendaCmsDividerVisibility() {
+  const divider = document.getElementById("agenda-program-divider");
+  const toggleBtn = document.getElementById("agenda-toggle-btn");
+  const cmsBtn = document.getElementById("cms-edit-btn");
+  if (!divider) return;
+
+  const toggleVisible = Boolean(toggleBtn && toggleBtn.style.display !== "none");
+  const cmsVisible = Boolean(cmsBtn && cmsBtn.style.display !== "none");
+  divider.hidden = !(toggleVisible && cmsVisible);
+}
+
+async function setAgendaActionButtonsVisibility(profile) {
+  const editBtn = document.getElementById("agenda-edit-btn");
+  const cmsBtn = document.getElementById("cms-edit-btn");
+  const hasAgendaSetup = Boolean(profile?.agendaUrl);
+  const clientIdValid = await hasValidGoogleClientId();
+  const showProgramCms = isMobileActionLayout() ? hasAgendaSetup : clientIdValid;
+
+  if (editBtn) {
+    editBtn.style.display = hasAgendaSetup ? "inline-flex" : "none";
+  }
+  if (cmsBtn) {
+    cmsBtn.style.display = showProgramCms ? "inline-flex" : "none";
+  }
+
+  updateAgendaCmsDividerVisibility();
 }
 
 // Helper: Handle zero state (no program loaded)
@@ -378,11 +561,28 @@ async function handleZeroState() {
   toggleElementClasses([churchContainer, unitHeader, welcomeText, themeToggle], ["hidden"], []);
   toggleElementClasses(main, ["hidden"], ["loading"]);
 
+  // Also remove loading class from page-container to hide the loading spinner
+  const pageContainer = document.getElementById("page-container");
+  if (pageContainer) {
+    pageContainer.classList.remove("loading");
+  }
+
   const { getMetadata } = await import("./data/IndexedDBManager.js");
   const helpShown = await getMetadata("userPreference_helpShown");
-  if (!helpShown) {
+
+  // iOS: show onboarding modal with camera + manual URL entry
+  if (isIOS()) {
+    openIOSOnboarding();
+  } else if (!helpShown) {
     openHelpModal();
   }
+
+  // Show agenda/CMS action buttons on zero state if profile has agendaUrl
+  const currentProfile = Profiles.getCurrentProfile();
+  await setAgendaActionButtonsVisibility(currentProfile);
+  console.log("[INIT] Agenda/CMS action visibility updated:", {
+    hasAgendaUrl: !!currentProfile?.agendaUrl
+  });
 }
 
 // Helper: Add reset button to help modal with warnings
@@ -454,7 +654,6 @@ function addResetButtonToHelpModal() {
   // Move Close button just before the reset section, with an hr below it
   const modalActions = document.querySelector("#help-modal .modal-actions");
   if (modalActions) {
-    modalActions.style.cssText = "display: flex; justify-content: center; margin: 4px 0 8px;";
     helpSections.insertBefore(modalActions, resetSection);
     const razorHr = document.createElement("hr");
     razorHr.className = "help-razor";
@@ -537,6 +736,10 @@ async function loadAndRenderProgram(sheetUrl) {
     await processAndRenderProgram(rows, sheetUrl);
   } catch (err) {
     console.warn("Failed to fetch sheet:", err);
+    logNetworkStatus("Falling back to cached program after sheet fetch failure", {
+      source: "loadAndRenderProgram",
+      sheetUrl
+    });
     await tryLoadCachedProgram();
   }
 }
@@ -557,6 +760,14 @@ async function ensureProfileExists(sheetUrl, unitName, stakeName) {
 
   await Profiles.addProfile(sheetUrl, unitName, stakeName);
   initProfileUI();
+}
+
+function doesCurrentProfileMatchSheetUrl(currentProfile, sheetUrl) {
+  if (!currentProfile?.url || !sheetUrl) {
+    return false;
+  }
+
+  return sanitizeSheetUrl(currentProfile.url) === sanitizeSheetUrl(sheetUrl);
 }
 
 // Helper: Cache program data
@@ -621,15 +832,25 @@ async function processAndRenderProgram(rows, sheetUrl) {
   const currentProfile = Profiles.getCurrentProfile();
   const unitName = findRowValue(rows, "unitName", "Unknown Unit");
   const stakeName = findRowValue(rows, "stakeName");
+  const currentProfileMatchesSheet = doesCurrentProfileMatchSheetUrl(currentProfile, sheetUrl);
 
   // Update profile metadata
-  if (currentProfile) {
+  if (currentProfileMatchesSheet) {
+    console.log("[INIT] Loaded sheet matches current profile; refreshing profile metadata", {
+      profileId: currentProfile.id,
+      profileUrl: currentProfile.url,
+      sheetUrl
+    });
     await Profiles.addProfile(currentProfile.url, unitName, stakeName);
     initProfileUI();
-  }
-
-  // Create profile from URL if needed
-  if (!currentProfile && sheetUrl) {
+  } else if (sheetUrl) {
+    console.log("[INIT] Loaded sheet does not match current profile; selecting or creating sheet profile", {
+      currentProfileId: currentProfile?.id || "[none]",
+      currentProfileUrl: currentProfile?.url || "[none]",
+      sheetUrl,
+      unitName,
+      stakeName
+    });
     await ensureProfileExists(sheetUrl, unitName, stakeName);
   }
 
@@ -652,11 +873,11 @@ async function processAndRenderProgram(rows, sheetUrl) {
   leadershipState.mainRows = rows;
   console.log(
     "[Leadership] processAndRenderProgram calling loadAgendaForCurrentProfile. Profile:",
-    currentProfile?.id,
+    loadedProfile?.id,
     "agendaUrl:",
-    currentProfile?.agendaUrl
+    loadedProfile?.agendaUrl
   );
-  await loadAgendaForCurrentProfile(currentProfile);
+  await loadAgendaForCurrentProfile(loadedProfile);
   updateTimestamp();
 
   // Archive (uses full rows including agenda key placeholders)
@@ -683,12 +904,15 @@ async function loadAgendaForCurrentProfile(profile) {
   leadershipState.hasAgendaContent = false;
   leadershipState.agendaValid = false;
 
+  await setAgendaActionButtonsVisibility(profile);
+
   const toggleBtn = document.getElementById("agenda-toggle-btn");
 
   if (!profile?.agendaUrl) {
     // No agenda configured
     console.log("[Leadership] No agendaUrl configured for profile:", profile?.id);
     if (toggleBtn) toggleBtn.style.display = "none";
+    updateAgendaCmsDividerVisibility();
     leadershipState.currentView = "program";
     renderMain();
     return;
@@ -712,6 +936,11 @@ async function loadAgendaForCurrentProfile(profile) {
     await Profiles.updateProfile(profile);
   } catch (err) {
     console.warn("[Leadership] Agenda fetch failed, trying cache:", err);
+    logNetworkStatus("Falling back to cached agenda after fetch failure", {
+      source: "loadAgendaForCurrentProfile",
+      profileId: profile?.id,
+      agendaUrl: profile?.agendaUrl
+    });
     csv = await getMetadata(`agendaCache_${profile.id}`);
     if (csv) {
       profile.agendaValid = true;
@@ -719,6 +948,7 @@ async function loadAgendaForCurrentProfile(profile) {
       profile.agendaValid = false;
       await Profiles.updateProfile(profile);
       if (toggleBtn) toggleBtn.style.display = "none";
+      updateAgendaCmsDividerVisibility();
       leadershipState.currentView = "program";
       renderMain();
       return;
@@ -761,9 +991,14 @@ async function loadAgendaForCurrentProfile(profile) {
 
   // Show toggle button if we have content
   if (toggleBtn) {
-    toggleBtn.style.display = profile.agendaValid && hasContent ? "inline-block" : "none";
+    toggleBtn.style.display = profile.agendaValid && hasContent ? "inline-flex" : "none";
     console.log("[Leadership] Toggle button display:", toggleBtn.style.display);
   }
+  updateAgendaCmsDividerVisibility();
+
+  console.log("[Leadership] Agenda/CMS action visibility updated:", {
+    hasAgendaUrl: !!profile?.agendaUrl
+  });
 
   // Determine initial view from sessionStorage or URL, default to program
   const urlParams = new URLSearchParams(window.location.search);
@@ -894,7 +1129,10 @@ function renderMain() {
         const mapKey = `${row.key}|${row.value}`;
         const entry = leadershipState.agendaMap.get(mapKey);
         if (entry && entry.values.length > 0) {
-          agendaPanels.push({ row, panel: createAgendaAccordionPanel(row.key, entry.values, row.value, true) });
+          agendaPanels.push({
+            row,
+            panel: createAgendaAccordionPanel(row.key, entry.values, row.value, true)
+          });
         }
       }
     });
@@ -1002,6 +1240,24 @@ function initLeadershipToggle() {
   } else {
     console.warn("[Leadership] Toggle button not found in DOM");
   }
+
+  const editBtn = document.getElementById("agenda-edit-btn");
+  if (editBtn) {
+    editBtn.addEventListener("click", () => {
+      const currentProfile = Profiles.getCurrentProfile();
+      if (currentProfile?.id) {
+        const agendaUrl = `cms_agenda/index.html?profileId=${encodeURIComponent(currentProfile.id)}`;
+        window.location.href = agendaUrl;
+      }
+    });
+  }
+
+  const cmsBtn = document.getElementById("cms-edit-btn");
+  if (cmsBtn) {
+    cmsBtn.addEventListener("click", () => {
+      window.location.href = "cms/index.html";
+    });
+  }
 }
 
 /**
@@ -1042,7 +1298,7 @@ function createAgendaAccordionPanel(key, items, agendaId, isLocked = true) {
   const chevron = document.createElement("span");
   chevron.className = "chevron-icon";
   chevron.setAttribute("aria-hidden", "true");
-  chevron.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5.41 7.59L4 9l8 8 8-8-1.41-1.41L12 14.17z"/></svg>`;
+  chevron.innerHTML = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M5.41 7.59L4 9l8 8 8-8-1.41-1.41L12 14.17z\"/></svg>";
 
   if (lockIcon) header.appendChild(lockIcon);
 
@@ -1241,7 +1497,7 @@ function renderAgendaContent(key, items, el) {
         li.appendChild(roleEl);
         li.appendChild(document.createTextNode(parts[2]));
       } else {
-        li.textContent = role ? `${name} — ${role}` : (name || item.trim());
+        li.textContent = role ? `${name} — ${role}` : name || item.trim();
       }
     } else {
       li.textContent = item.trim();
@@ -1310,6 +1566,11 @@ async function renderCachedProgram(cachedRows, cachedProfile) {
   const main = document.getElementById("main-program");
   main.textContent = "";
   renderProgram(cachedRows);
+
+  logNetworkStatus("Rendering cached program", {
+    source: "renderCachedProgram",
+    profileId: cachedProfile?.id || "[none]"
+  });
 
   if (cachedProfile?.archived) {
     document.body.classList.add("archive-view");
@@ -1380,15 +1641,26 @@ async function init() {
   const main = document.getElementById("main-program");
   const pageContainer = document.getElementById("page-container");
 
-  if (pageContainer) pageContainer.classList.add("loading");
-  if (main) main.classList.add("loading");
-
   // Initialize theme
   initTheme();
   try {
     // Load and log version
-    const versionResponse = await fetch("./version.json");
-    const versionData = await versionResponse.json();
+    let versionData = { version: "unknown" };
+    try {
+      const versionResponse = await fetch("./version.json");
+      if (versionResponse && typeof versionResponse.json === "function") {
+        syncNetworkReachability({
+          reachable: true,
+          showOnlineNotice: true,
+          source: "init-version-fetch"
+        });
+        versionData = await versionResponse.json();
+      } else {
+        console.warn("[VERSION] version.json response missing json() method; using fallback version.");
+      }
+    } catch (versionErr) {
+      console.warn("[VERSION] Unable to load version.json; continuing with fallback version.", versionErr);
+    }
     console.log(`[VERSION] App running version: ${versionData.version}`);
 
     console.log("[INIT] Starting initialization...");
@@ -1406,7 +1678,37 @@ async function init() {
 
     const sheetUrl = await determineSheetUrl();
 
+    // Log URL resolution channel for debugging
+    const urlParam = new URLSearchParams(globalThis.window.location.search).get("url");
+    const localStorageUrl = localStorage.getItem("sheetUrl");
+    const currentProfile = Profiles.getCurrentProfile();
+    const isStandalone =
+      globalThis.window.matchMedia("(display-mode: standalone)").matches ||
+      ("standalone" in globalThis.navigator && globalThis.navigator.standalone);
+    const channel = urlParam
+      ? "url-params"
+      : currentProfile?.url
+        ? "profile"
+        : localStorageUrl
+          ? "localStorage"
+          : "none";
+
+    console.log("[INIT] URL Resolution:", {
+      channel,
+      urlParamPresent: !!urlParam,
+      localStorageUrlPresent: !!localStorageUrl,
+      profileUrlPresent: !!currentProfile?.url,
+      profileId: currentProfile?.id || "[none]",
+      profileUrl: currentProfile?.url || "[none]",
+      resolvedUrl: sheetUrl || "[none]",
+      isStandalone: isStandalone
+    });
+
     if (!sheetUrl) {
+      // Zero state - don't show loading modal
+      console.log("[INIT] Zero state (no URL) - hiding loading modal");
+      if (pageContainer) pageContainer.classList.remove("loading");
+      if (main) main.classList.remove("loading");
       await handleZeroState();
       return;
     }
@@ -1414,16 +1716,53 @@ async function init() {
     // Save sheetUrl to localStorage as fallback for future upgrades
     if (sheetUrl) {
       localStorage.setItem("sheetUrl", sheetUrl);
+      console.log("[INIT] Synced resolved sheetUrl to localStorage fallback", { sheetUrl });
     }
 
-    await handleActiveState(sheetUrl);
+    // Active state - show loading modal with proper timing
+    await handleActiveStateWithLoadingModal(sheetUrl, pageContainer, main);
   } finally {
+    // Ensure loading modal is removed at end
     if (main) main.classList.remove("loading");
     if (pageContainer) pageContainer.classList.remove("loading");
     handleVersionVisibility();
   }
 
   globalThis.window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// Helper: Handle active state with loading modal timing
+async function handleActiveStateWithLoadingModal(sheetUrl, pageContainer, main) {
+  // Detect if this is a reload/refresh vs first load
+  const isReload =
+    performance.navigation?.type === 1 ||
+    performance.getEntriesByType("navigation")?.[0]?.type === "reload";
+
+  // For reloads: Show loading with 500ms delay for 2.5 seconds
+  if (isReload) {
+    console.log("[INIT] Page reload detected - showing loading modal with 500ms delay");
+
+    // Wait 500ms before showing loading
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Show loading modal
+    if (pageContainer) pageContainer.classList.add("loading");
+    if (main) main.classList.add("loading");
+
+    // Auto-hide after 2.5 seconds regardless of load status
+    setTimeout(() => {
+      console.log("[INIT] Auto-hiding loading modal after 2.5 seconds");
+      if (main) main.classList.remove("loading");
+      if (pageContainer) pageContainer.classList.remove("loading");
+    }, 2500);
+  } else {
+    // First load with URL: show loading immediately
+    console.log("[INIT] First load with URL - showing loading modal immediately");
+    if (pageContainer) pageContainer.classList.add("loading");
+    if (main) main.classList.add("loading");
+  }
+
+  await handleActiveState(sheetUrl);
 }
 
 // ------------------------------------------------------------
@@ -1945,8 +2284,10 @@ async function handleNewProgramFromQR(url, unitName, stakeName) {
 
 // Helper: Parse QR code data
 async function parseQRCodeData(url) {
+  console.log("[QR] Parsing scanned URL data", { url });
   const csv = await fetchWithTimeout(url, 5000);
   const rows = await createWorker("parseCSV", csv, { language: getLanguage() });
+  console.log("[QR] Parsed scanned URL rows", { rowCount: rows.length });
   return rows;
 }
 
@@ -1956,6 +2297,11 @@ async function handleQRCodeScanned(url) {
   const rows = await parseQRCodeData(url);
   const unitName = findRowValue(rows, "unitName", "Unknown Unit");
   const stakeName = findRowValue(rows, "stakeName");
+  console.log("[QR] Resolved profile metadata from scanned URL", {
+    url,
+    unitName,
+    stakeName
+  });
 
   // Check if profile already exists
   const profiles = Profiles.getProfiles();
@@ -1965,12 +2311,22 @@ async function handleQRCodeScanned(url) {
   await setMetadata("userPreference_helpShown", "true");
 
   if (existingProfile) {
+    console.log("[QR] Existing profile found for scanned URL, switching profile", {
+      profileId: existingProfile.id,
+      unitName: existingProfile.unitName
+    });
     // Profile exists - just switch to it without modal
     await Profiles.selectProfile(existingProfile.id);
+    console.log("[QR] Existing profile selection completed before reload", {
+      selectedProfileId: Profiles.getCurrentProfile()?.id || "[none]",
+      selectedProfileUrl: Profiles.getCurrentProfile()?.url || "[none]",
+      localStorageSheetUrlBeforeReload: localStorage.getItem("sheetUrl") || "[none]"
+    });
     location.reload();
     return;
   }
 
+  console.log("[QR] No existing profile found, opening confirmation modal for scanned URL");
   // Show Confirm Modal for new profile
   await handleNewProgramFromQR(url, unitName, stakeName);
 }
@@ -1985,7 +2341,7 @@ globalThis.window.addEventListener("qr-scanned", async (e) => {
   try {
     await handleQRCodeScanned(url);
   } catch (err) {
-    console.error("QR Scan Failed:", err);
+    console.error("QR Scan Failed:", { url, error: err?.message || String(err) });
     alert("Could not load program from that QR code. Please try again.");
     location.reload();
   }
@@ -2013,6 +2369,8 @@ function updateBasicStrings() {
   updateElementAriaLabel("manage-profiles-btn", "managePrograms");
   updateElementText("add-new-program-btn", "scanNewProgram");
   updateElementText("close-modal-btn", "close");
+  updateElementText("close-help-modal-btn", "done");
+  updateElementAriaLabel("close-help-modal-top-btn", "close");
   updateElementAriaLabel("theme-toggle", "toggleDarkMode");
   updateElementText("welcome-to-text", "welcomeTo");
   updateElementText("manage-profiles-title", "managePrograms");
@@ -2040,7 +2398,7 @@ function updateUpdateNotification() {
 
     const updateBtn = document.createElement("button");
     updateBtn.textContent = t("update");
-    updateBtn.onclick = () => refreshPage();
+    updateBtn.onclick = () => window.location.reload();
     updateNotification.appendChild(updateBtn);
   }
 }
@@ -2357,14 +2715,7 @@ if (typeof globalThis.window !== "undefined" && !globalThis.window.__VITEST__) {
       initDiagnosticButton();
       promptPWAInstall();
       await updateStaticStrings();
-      // Ensure help modal is properly initialized before init()
-      if (typeof globalThis.window !== "undefined" && !globalThis.window.__VITEST__) {
-        const { getMetadata } = await import("./data/IndexedDBManager.js");
-        const helpShown = await getMetadata("userPreference_helpShown");
-        if (!helpShown) {
-          openHelpModal();
-        }
-      }
+      // Help modal is shown only on zero state by handleZeroState()
       if (!globalThis.window.__VITEST__) {
         await init();
       }
@@ -2437,4 +2788,12 @@ export {
 export { fetchSheet, parseCSV } from "./utils/csv.js";
 
 // Keep local exports
-export { init, fetchWithTimeout };
+export {
+  init,
+  fetchWithTimeout,
+  initNetworkStatus,
+  determineSheetUrl,
+  doesCurrentProfileMatchSheetUrl,
+  setAgendaActionButtonsVisibility,
+  updateAgendaCmsDividerVisibility
+};

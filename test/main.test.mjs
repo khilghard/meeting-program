@@ -13,6 +13,12 @@ const setupDOM = () => {
     </header>
     <div id="offline-banner" hidden></div>
     <div id="main-program"></div>
+    <div id="agenda-action-row">
+      <button id="agenda-edit-btn" style="display:none"></button>
+      <button id="agenda-toggle-btn" style="display:none"></button>
+      <hr id="agenda-program-divider" hidden />
+      <button id="cms-edit-btn" style="display:none"></button>
+    </div>
     <button id="qr-action-btn"></button>
     <button id="reload-btn" class="hidden"></button>
     <div id="app-version"></div>
@@ -49,10 +55,15 @@ const {
   renderLinkWithSpace,
   renderProgram,
   init,
+  initNetworkStatus,
   fetchSheet,
   parseCSV,
   renderers,
-  fetchWithTimeout
+  fetchWithTimeout,
+  determineSheetUrl,
+  doesCurrentProfileMatchSheetUrl,
+  setAgendaActionButtonsVisibility,
+  updateAgendaCmsDividerVisibility
 } = Main;
 
 // Set up test isolation with browser API stubs
@@ -61,6 +72,7 @@ stubBrowserAPIs();
 // Reusable DOM setup for each test
 beforeEach(async () => {
   setupDOM();
+  vi.restoreAllMocks();
   // Initialize i18n to load translations
   await I18n.initI18n();
   // Reset language to English for consistent test baseline
@@ -239,6 +251,73 @@ describe("appendRowHymn()", () => {
   });
 });
 
+describe("homepage action visibility", () => {
+  test("shows Program CMS on desktop when Google Client ID is configured", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+
+    const metadataModule = await import("../js/data/IndexedDBManager.js");
+    vi.spyOn(metadataModule, "getMetadata").mockImplementation(async (key) => {
+      if (key === "googleClientId") {
+        return "test-client-id.apps.googleusercontent.com";
+      }
+      return null;
+    });
+
+    await setAgendaActionButtonsVisibility({ agendaUrl: "" });
+
+    expect(document.getElementById("agenda-edit-btn").style.display).toBe("none");
+    expect(document.getElementById("cms-edit-btn").style.display).toBe("inline-flex");
+  });
+
+  test("keeps Program CMS hidden on mobile without agenda setup even with Google Client ID", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: true,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+
+    const metadataModule = await import("../js/data/IndexedDBManager.js");
+    vi.spyOn(metadataModule, "getMetadata").mockImplementation(async (key) => {
+      if (key === "googleClientId") {
+        return "test-client-id.apps.googleusercontent.com";
+      }
+      return null;
+    });
+
+    await setAgendaActionButtonsVisibility({ agendaUrl: "" });
+
+    expect(document.getElementById("cms-edit-btn").style.display).toBe("none");
+  });
+
+  test("shows divider only when both Leadership View and Program CMS are visible", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: true,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+
+    const metadataModule = await import("../js/data/IndexedDBManager.js");
+    vi.spyOn(metadataModule, "getMetadata").mockResolvedValue(null);
+
+    await setAgendaActionButtonsVisibility({ agendaUrl: "https://docs.google.com/spreadsheets/d/a/edit" });
+    expect(document.getElementById("agenda-program-divider").hidden).toBe(true);
+
+    document.getElementById("agenda-toggle-btn").style.display = "inline-flex";
+    updateAgendaCmsDividerVisibility();
+
+    expect(document.getElementById("agenda-edit-btn").style.display).toBe("inline-flex");
+    expect(document.getElementById("cms-edit-btn").style.display).toBe("inline-flex");
+    expect(document.getElementById("agenda-program-divider").hidden).toBe(false);
+  });
+});
+
 // ---------- renderSpeaker ----------
 describe("renderSpeaker()", () => {
   test("renders a speaker row", () => {
@@ -323,6 +402,11 @@ describe("renderProgram()", () => {
   test("renders numbered speaker keys for compatibility", () => {
     renderProgram([{ key: "speaker1", value: "Alice" }]);
     expect(document.querySelector("#speaker .value-on-right").textContent).toBe("Alice");
+  });
+
+  test("renders numbered leader keys for compatibility", () => {
+    renderProgram([{ key: "leader1", value: "Bishop Smith | 801-555-1111 | Bishop" }]);
+    expect(document.querySelector(".leader-of-dots .label").textContent).toBe("Bishop Smith");
   });
 
   test("skips empty values but renders horizontalLine", () => {
@@ -559,6 +643,23 @@ describe("Networking & Errors", () => {
       expect(result).toBe("data");
     });
 
+    test("sanitizes Google Sheets edit URLs before fetching", async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve("key,en\nunitName,Test Ward")
+      });
+
+      await Main.fetchWithTimeout(
+        "https://docs.google.com/spreadsheets/d/FILE_ID/edit?gid=0",
+        1000
+      );
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        "https://docs.google.com/spreadsheets/d/FILE_ID/gviz/tq?tqx=out:csv&gid=0",
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+
     test("rejects on timeout", async () => {
       vi.useFakeTimers();
       // Mock fetch to respect the abort signal
@@ -583,6 +684,49 @@ describe("Networking & Errors", () => {
 
       await expect(promise).rejects.toThrow(/(timeout|aborted)/i);
       vi.useRealTimers();
+    });
+  });
+
+  describe("determineSheetUrl()", () => {
+    test("prefers current profile URL over stale localStorage fallback", async () => {
+      const staleUrl = "https://docs.google.com/spreadsheets/d/stale-sheet/gviz/tq?tqx=out:csv";
+      const selectedProfileUrl =
+        "https://docs.google.com/spreadsheets/d/selected-sheet/gviz/tq?tqx=out:csv";
+
+      localStorage.setItem("sheetUrl", staleUrl);
+      const getCurrentProfileSpy = vi
+        .spyOn(Profiles, "getCurrentProfile")
+        .mockReturnValue({ id: "selected-profile", url: selectedProfileUrl });
+
+      const resolvedUrl = await determineSheetUrl();
+
+      expect(resolvedUrl).toBe(selectedProfileUrl);
+
+      getCurrentProfileSpy.mockRestore();
+    });
+  });
+
+  describe("doesCurrentProfileMatchSheetUrl()", () => {
+    test("returns false when loaded sheet differs from current profile", () => {
+      const currentProfile = {
+        id: "current-profile",
+        url: "https://docs.google.com/spreadsheets/d/current-sheet/gviz/tq?tqx=out:csv"
+      };
+      const loadedSheetUrl =
+        "https://docs.google.com/spreadsheets/d/new-sheet/gviz/tq?tqx=out:csv";
+
+      expect(doesCurrentProfileMatchSheetUrl(currentProfile, loadedSheetUrl)).toBe(false);
+    });
+
+    test("returns true for equivalent current profile and loaded sheet URLs", () => {
+      const currentProfile = {
+        id: "current-profile",
+        url: "https://docs.google.com/spreadsheets/d/current-sheet/edit?gid=0"
+      };
+      const loadedSheetUrl =
+        "https://docs.google.com/spreadsheets/d/current-sheet/gviz/tq?tqx=out:csv&gid=0";
+
+      expect(doesCurrentProfileMatchSheetUrl(currentProfile, loadedSheetUrl)).toBe(true);
     });
   });
 
@@ -806,6 +950,10 @@ describe("Offline Banner", () => {
 // ---------- Network Status Tests ----------
 describe("Network Status Monitoring", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  beforeEach(() => {
     setupDOM();
     vi.clearAllMocks();
     localStorage.clear();
@@ -862,6 +1010,79 @@ describe("Network Status Monitoring", () => {
 
     lastSyncEl.textContent = `Last sync: ${timeString}`;
     expect(lastSyncEl.textContent).toContain("Last sync");
+  });
+
+  test("keeps online status hidden on initial online page load", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      writable: true,
+      value: true
+    });
+
+    initNetworkStatus();
+    await vi.runAllTimersAsync();
+
+    const statusEl = document.getElementById("network-status");
+    expect(statusEl.classList.contains("hidden")).toBe(true);
+    expect(statusEl.querySelector(".status-text").textContent).toBe("Online");
+  });
+
+  test("shows online status only after a confirmed offline event", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      writable: true,
+      value: true
+    });
+
+    initNetworkStatus();
+    await vi.runAllTimersAsync();
+
+    const statusEl = document.getElementById("network-status");
+    expect(statusEl.classList.contains("hidden")).toBe(true);
+
+    navigator.onLine = false;
+    window.dispatchEvent(new Event("offline"));
+    await vi.runAllTimersAsync();
+
+    expect(statusEl.classList.contains("hidden")).toBe(false);
+    expect(statusEl.querySelector(".status-text").textContent).toBe("Working offline");
+
+    navigator.onLine = true;
+    window.dispatchEvent(new Event("online"));
+    await vi.runAllTimersAsync();
+
+    expect(statusEl.querySelector(".status-text").textContent).toBe("Online");
+    expect(statusEl.classList.contains("hidden")).toBe(true);
+  });
+
+  test("treats successful fetches as online even when navigator reports offline", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      writable: true,
+      value: false
+    });
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve("key,value")
+    });
+
+    initNetworkStatus();
+    await vi.runAllTimersAsync();
+
+    const statusEl = document.getElementById("network-status");
+    expect(statusEl.querySelector(".status-text").textContent).toBe("Working offline");
+
+    const fetchPromise = Main.fetchWithTimeout("https://example.com", 1000);
+    await Promise.resolve();
+
+    expect(statusEl.querySelector(".status-text").textContent).toBe("Online");
+    expect(statusEl.classList.contains("hidden")).toBe(true);
+
+    await fetchPromise;
+    await vi.runAllTimersAsync();
+
+    expect(statusEl.classList.contains("hidden")).toBe(true);
   });
 });
 

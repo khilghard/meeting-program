@@ -5,9 +5,9 @@ const LANGUAGE_HEADERS = ["en", "es", "fr", "swa"];
 
 // Helper: Process a single character in CSV parsing
 function processChar(char, nextChar, currentField, inQuotes) {
-  if (char === '"') {
-    if (inQuotes && nextChar === '"') {
-      return { field: currentField + '"', quotes: true, skip: true };
+  if (char === "\"") {
+    if (inQuotes && nextChar === "\"") {
+      return { field: currentField + "\"", quotes: true, skip: true };
     }
     return { field: currentField, quotes: !inQuotes, skip: false };
   }
@@ -20,7 +20,7 @@ function processChar(char, nextChar, currentField, inQuotes) {
   return { field: currentField + char, skip: false };
 }
 
-function parseCSV(csv) {
+function parseCSV(csv, options = {}) {
   const rows = [];
   let currentRow = [];
   let currentField = "";
@@ -55,38 +55,70 @@ function parseCSV(csv) {
   currentRow.push(currentField);
   if (currentRow.length > 0) rows.push(currentRow);
 
-  return processCSVRows(rows);
+  return processCSVRows(rows, options);
 }
 
 // Helper: Process parsed rows and apply language formatting
-function processCSVRows(rows) {
-  const headerRow = rows[0] || [];
-  const isMultiLang =
-    headerRow.length > 2 && LANGUAGE_HEADERS.includes(headerRow[1]?.toLowerCase());
-  const currentLang = getLanguage() || "en";
+function processCSVRows(rows, options = {}) {
+  if (!rows || rows.length === 0) {
+    return [];
+  }
+
+  const headerRow = rows[0];
+
+  // Check if this is a multi-language CSV with expected headers
+  // Look for 'key' in first column and at least one language code in subsequent columns
+  const hasKeyHeader = headerRow && headerRow[0] && headerRow[0].toLowerCase().includes("key");
+  const hasLanguageHeaders =
+    headerRow &&
+    headerRow.length >= 2 &&
+    headerRow[1] &&
+    LANGUAGE_HEADERS.includes(headerRow[1].toLowerCase());
+
+  // Determine current language from options or i18n
+  const currentLang = options.language || getLanguage() || "en";
   const langIndex = LANGUAGE_HEADERS.indexOf(currentLang);
   const safeLangIndex = Math.max(0, langIndex);
 
+  // If not a multi-language CSV, fall back to single-language behavior
+  if (!hasKeyHeader || !hasLanguageHeaders) {
+    const result = [];
+    rows.slice(1).forEach((row) => {
+      if (!row || row.length === 0) {
+        return;
+      }
+      const rawKey = row[0];
+      const rawValue = row[1];
+      const entry = sanitizeEntry(rawKey, rawValue);
+      if (!entry) {
+        return;
+      }
+      if (entry.value) {
+        entry.value = entry.value.replaceAll(/~/g, ",");
+      }
+      result.push(entry);
+    });
+    return result;
+  }
+
+  // Multi-language CSV: select column based on language, fallback to English
   const result = [];
   rows.slice(1).forEach((row) => {
-    const rawKey = row[0];
-    let rawValue;
-
-    if (isMultiLang) {
-      const langValue = row[safeLangIndex + 1];
-      const enValue = row[1];
-      rawValue = langValue?.trim() !== "" ? langValue : enValue;
-    } else {
-      rawValue = row[1];
+    if (!row || row.length === 0) {
+      return;
     }
+    const rawKey = row[0];
+    const langValue = row[safeLangIndex + 1];
+    const enValue = row[1];
+    const rawValue = langValue?.trim() !== "" ? langValue : enValue;
 
     const entry = sanitizeEntry(rawKey, rawValue);
-    if (!entry) return;
-
+    if (!entry) {
+      return;
+    }
     if (entry.value) {
       entry.value = entry.value.replaceAll(/~/g, ",");
     }
-
     result.push(entry);
   });
 

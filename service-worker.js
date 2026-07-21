@@ -26,7 +26,7 @@ console.log(`[SW] BASE_PATH detected: "${BASE_PATH}"`);
 // Legacy support - keep old MPPATH for existing users
 const MPPATH = BASE_PATH || "/meeting-program-dev";
 const APP_PREFIX = "smpwa";
-const VERSION = "2.3.2";
+const VERSION = "2.4.37";
 const CACHE_NAME = `${APP_PREFIX}-${VERSION}`;
 
 // All users now on 2.2.x - single unified cache scheme
@@ -43,6 +43,8 @@ const MAX_CACHES_TO_KEEP = 5; // Increased to support dual cache schemes
 // Files to precache - use BASE_PATH for new deployments, MPPATH for legacy
 const URLS = [
   `${BASE_PATH || MPPATH}/index.html?v=${VERSION}`,
+  `${BASE_PATH || MPPATH}/cms/index.html?v=${VERSION}`,
+  `${BASE_PATH || MPPATH}/cms_agenda/index.html?v=${VERSION}`,
   `${BASE_PATH || MPPATH}/css/styles.css?v=${VERSION}`,
   `${BASE_PATH || MPPATH}/js/version.js?v=${VERSION}`,
   `${BASE_PATH || MPPATH}/js/version-parser.js?v=${VERSION}`,
@@ -63,8 +65,10 @@ const URLS = [
   `${BASE_PATH || MPPATH}/img/oil-lamp.jpg`,
   `${BASE_PATH || MPPATH}/img/sacrament.png`,
   `${BASE_PATH || MPPATH}/manifest.webmanifest`,
-  "https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js",
-  "https://cdn.jsdelivr.net/npm/dexie@4.3.0/+esm"
+  `${BASE_PATH || MPPATH}/js/vendor/dexie.mjs?v=${VERSION}`,
+  `${BASE_PATH || MPPATH}/js/vendor/uuid-v4.mjs?v=${VERSION}`,
+  `${BASE_PATH || MPPATH}/js/vendor/jsQR.js?v=${VERSION}`,
+  `${BASE_PATH || MPPATH}/js/vendor/qrcode.js?v=${VERSION}`
 ];
 
 // ------------------------------------------------------------
@@ -121,6 +125,14 @@ async function cacheWithTimestamp(cache, request, response) {
   }
 }
 
+function hasAuthorizationHeader(request) {
+  try {
+    return Boolean(request?.headers?.get("authorization"));
+  } catch {
+    return false;
+  }
+}
+
 // ------------------------------------------------------------
 // Helper: Static cache handler (network-first, falls back to cache)
 // This ensures refresh (F5) shows fresh content while supporting offline
@@ -143,21 +155,52 @@ async function handleStaticCache(req) {
   } catch (fetchErr) {
     // Network failed, fall back to cached version (offline support)
     try {
-      const cached = await caches.match(req);
-      if (cached) {
+      const cachedExact = await caches.match(req);
+      if (cachedExact) {
         const isMainJs = req.url.includes("main.js");
         console.log(
           `[SW] ${isMainJs ? "CRITICAL: Serving CACHED main.js (may be outdated)" : "Serving cached"}: ${req.url}`
         );
-        return cached;
+        return cachedExact;
+      }
+
+      // If versioned query params changed (e.g. ?v=2.4.23 -> ?v=2.4.24),
+      // still allow static fallback to the same path in cache.
+      const cachedIgnoreSearch = await caches.match(req, { ignoreSearch: true });
+      if (cachedIgnoreSearch) {
+        console.log(`[SW] Serving cached (ignoreSearch): ${req.url}`);
+        return cachedIgnoreSearch;
       }
     } catch (cacheErr) {
-      console.warn(`[SW] Cache lookup failed:`, cacheErr);
+      console.warn("[SW] Cache lookup failed:", cacheErr);
     }
 
     // Both network and cache failed
-    console.error(`[SW] No cached or network response for:`, req.url);
-    throw fetchErr;
+    console.error("[SW] No cached or network response for:", req.url);
+
+    // Never reject respondWith() for static assets; return an explicit response
+    // so the fetch event does not surface as an unhandled promise rejection.
+    const fallbackHeaders = new Headers({
+      "X-SW-Fallback": "static-offline",
+      "Cache-Control": "no-store"
+    });
+    if (req.destination === "style") {
+      fallbackHeaders.set("Content-Type", "text/css; charset=utf-8");
+      return new Response("", { status: 503, statusText: "Offline", headers: fallbackHeaders });
+    }
+    if (req.destination === "script") {
+      fallbackHeaders.set("Content-Type", "application/javascript; charset=utf-8");
+      return new Response("", { status: 503, statusText: "Offline", headers: fallbackHeaders });
+    }
+    if (req.destination === "document") {
+      fallbackHeaders.set("Content-Type", "text/html; charset=utf-8");
+      return new Response(
+        "<!doctype html><html><body><h1>Offline</h1><p>Content unavailable offline.</p></body></html>",
+        { status: 503, statusText: "Offline", headers: fallbackHeaders }
+      );
+    }
+
+    return new Response("", { status: 503, statusText: "Offline", headers: fallbackHeaders });
   }
 }
 
@@ -165,23 +208,17 @@ async function handleStaticCache(req) {
 // Helper: Google Sheets network-first handler
 // ------------------------------------------------------------
 async function handleGoogleSheets(req) {
-  try {
-    const res = await fetch(req);
-    if (res.ok && res.body) {
-      const dynamicCache = await caches.open(DYNAMIC_CACHE);
-      await cacheWithTimestamp(dynamicCache, req, res);
-    }
-    return res;
-  } catch (err) {
-    console.warn("[SW] Google Sheets fetch failed:", err);
-    throw err;
-  }
+  return handleDynamicCache(req, new URL(req.url));
 }
 
 // ------------------------------------------------------------
 // Helper: Dynamic cache with fallback
 // ------------------------------------------------------------
 async function handleDynamicCache(req, url) {
+  if (hasAuthorizationHeader(req)) {
+    return fetch(req);
+  }
+
   try {
     const res = await fetch(req);
     if (res.ok && res.body) {
@@ -294,6 +331,19 @@ self.addEventListener("fetch", (event) => {
 
   if (req.method !== "GET") return;
 
+  // Never intercept the service worker script fetch itself.
+  // On iOS Home Screen PWAs, the existing SW intercepting its own replacement
+  // script through handleDynamicCache can cause "Script load failed" errors
+  // when the network or cache layer fails. Let the browser handle it directly.
+  if (url.pathname.endsWith("/service-worker.js")) {
+    return;
+  }
+
+  const cmsBasePath = `${BASE_PATH}cms/`;
+  const cmsBasePathWithoutTrailingSlash = cmsBasePath.slice(0, -1);
+  const cmsAgendaBasePath = `${BASE_PATH}cms_agenda/`;
+  const cmsAgendaBasePathWithoutTrailingSlash = cmsAgendaBasePath.slice(0, -1);
+
   // Handle requests to deployment root (e.g., /meeting-program/ → /meeting-program/index.html)
   // This handles cases where users access the path without index.html
   if (
@@ -307,6 +357,31 @@ self.addEventListener("fetch", (event) => {
       headers: req.headers
     });
     event.respondWith(handleStaticCache(indexReq));
+    return;
+  }
+
+  // Handle requests to the CMS shell directory (e.g., /meeting-program/cms/ → /meeting-program/cms/index.html)
+  if (
+    url.pathname === cmsBasePath ||
+    url.pathname === cmsBasePathWithoutTrailingSlash
+  ) {
+    const cmsIndexReq = new Request(`${cmsBasePath}index.html`, {
+      method: req.method,
+      headers: req.headers
+    });
+    event.respondWith(handleStaticCache(cmsIndexReq));
+    return;
+  }
+
+  if (
+    url.pathname === cmsAgendaBasePath ||
+    url.pathname === cmsAgendaBasePathWithoutTrailingSlash
+  ) {
+    const cmsAgendaIndexReq = new Request(`${cmsAgendaBasePath}index.html`, {
+      method: req.method,
+      headers: req.headers
+    });
+    event.respondWith(handleStaticCache(cmsAgendaIndexReq));
     return;
   }
 
