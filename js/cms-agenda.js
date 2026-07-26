@@ -204,6 +204,7 @@ export function createCmsAgendaApp(dependencies = {}) {
       saveDraftButton: documentRef.getElementById("cms-agenda-save-draft-btn"),
       discardDraftButton: documentRef.getElementById("cms-agenda-discard-draft-btn"),
       signInAgainButton: documentRef.getElementById("cms-agenda-sign-in-again-btn"),
+      signOutButton: documentRef.getElementById("cms-agenda-sign-out-btn"),
       publishAllButton: documentRef.getElementById("cms-agenda-publish-all-btn"),
       makeActiveButton: documentRef.getElementById("cms-agenda-make-active-btn"),
       pendingList: documentRef.getElementById("cms-agenda-pending-list"),
@@ -310,7 +311,7 @@ export function createCmsAgendaApp(dependencies = {}) {
   }
 
   function setAuthPanelState() {
-    const { authPanel, authMessage, signInButton, setupButton } = getElements();
+    const { authPanel, authMessage, signInButton, setupButton, signOutButton } = getElements();
     if (state.isAuthenticated) {
       hideAuthPanel();
       if (signInButton) {
@@ -321,6 +322,9 @@ export function createCmsAgendaApp(dependencies = {}) {
     }
     if (authPanel) {
       authPanel.hidden = false;
+    }
+    if (signOutButton) {
+      signOutButton.hidden = true;
     }
     if (authMessage) {
       const authPrompt = state.hasConfiguredClientId
@@ -348,7 +352,7 @@ export function createCmsAgendaApp(dependencies = {}) {
   }
 
   function hideAuthPanel() {
-    const { authPanel, signInButton } = getElements();
+    const { authPanel, signInButton, signOutButton } = getElements();
     if (authPanel) {
       authPanel.hidden = true;
     }
@@ -356,6 +360,9 @@ export function createCmsAgendaApp(dependencies = {}) {
       signInButton.hidden = true;
       signInButton.disabled = true;
       signInButton.classList.remove("cms-agenda__sign-in-pulse");
+    }
+    if (signOutButton) {
+      signOutButton.hidden = false;
     }
   }
 
@@ -1124,6 +1131,17 @@ export function createCmsAgendaApp(dependencies = {}) {
     await handleSignIn();
   }
 
+  function handleSignOut() {
+    deps.auth.signOut();
+    state.isAuthenticated = false;
+    const { signOutButton } = getElements();
+    if (signOutButton) {
+      signOutButton.hidden = true;
+    }
+    setAuthPanelState();
+    setActionState();
+  }
+
   async function publishRow(row) {
     const forceOverwrite = Boolean(row?.forceOverwrite);
     const identity = buildAgendaRowIdentity(row.key, row.rowToken);
@@ -1461,6 +1479,7 @@ export function createCmsAgendaApp(dependencies = {}) {
     elements.makeActiveButton?.addEventListener("click", handleMakeActive);
     elements.signInButton?.addEventListener("click", handleSignIn);
     elements.signInAgainButton?.addEventListener("click", handleSignInAgain);
+    elements.signOutButton?.addEventListener("click", handleSignOut);
     elements.setupButton?.addEventListener("click", openSetupModal);
     elements.setupSaveButton?.addEventListener("click", saveSetupSettings);
     elements.setupCancelButton?.addEventListener("click", closeSetupModal);

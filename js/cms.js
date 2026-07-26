@@ -186,6 +186,7 @@ export function createCmsApp(dependencies = {}) {
       modifiedTime: documentRef.getElementById("cms-modified-time"),
       saveButton: documentRef.getElementById("cms-save-btn"),
       discardButton: documentRef.getElementById("cms-discard-btn"),
+      signOutButton: documentRef.getElementById("cms-sign-out-btn"),
       editorContainer: documentRef.getElementById("cms-editor-container"),
       setupModal: documentRef.getElementById("cms-setup-modal"),
       setupClientId: documentRef.getElementById("cms-setup-client-id"),
@@ -311,6 +312,9 @@ export function createCmsApp(dependencies = {}) {
     if (elements.authPanel) {
       elements.authPanel.hidden = false;
     }
+    if (elements.signOutButton) {
+      elements.signOutButton.hidden = true;
+    }
     setAuthPanelState();
     setToolbarState(false);
     setStatus(message, tone);
@@ -326,9 +330,12 @@ export function createCmsApp(dependencies = {}) {
   }
 
   function showEditorChrome() {
-    const { authPanel } = getElements();
+    const { authPanel, signOutButton } = getElements();
     if (authPanel) {
       authPanel.hidden = true;
+    }
+    if (signOutButton) {
+      signOutButton.hidden = false;
     }
     setToolbarState(true);
   }
@@ -468,6 +475,7 @@ export function createCmsApp(dependencies = {}) {
     });
   }
 
+  // eslint-disable-next-line no-unused-vars
   function draftMatchesCurrentView(draft) {
     return (
       draft &&
@@ -783,6 +791,15 @@ export function createCmsApp(dependencies = {}) {
     }
   }
 
+  function handleSignOut() {
+    deps.auth.signOut();
+    const { signOutButton } = getElements();
+    if (signOutButton) {
+      signOutButton.hidden = true;
+    }
+    showAuthGate("Signed out. Sign in with Google to continue editing.", "info");
+  }
+
   async function initialize() {
     const elements = getElements();
     console.log("[CMS][TabDebug] initialize start", {
@@ -842,6 +859,7 @@ export function createCmsApp(dependencies = {}) {
       deps.windowRef.sessionStorage.setItem(CMS_AUTH_PENDING_KEY, "1");
       await signIn();
     });
+    elements.signOutButton?.addEventListener("click", handleSignOut);
 
     const isAuthenticated = await initializeAuth();
     if (!isAuthenticated) {
