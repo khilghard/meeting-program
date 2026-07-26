@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="QR Code Generator" />
+    <title>QR Code Generator - Sacrament Meeting Program</title>
+    <script>
+      (function detectBasePath() {
+        const pathname = window.location.pathname;
+        let basePath = "/";
+        if (pathname.includes("/meeting-program-dev/")) {
+          basePath = "/meeting-program-dev/";
+        } else if (pathname.includes("/meeting-program/")) {
+          basePath = "/meeting-program/";
+        }
+        window.QR_BASE_PATH = basePath;
+      })();
+
+      (function applyThemeImmediately() {
+        try {
+          const storedTheme = localStorage.getItem("userPreference_theme");
+          const systemIsDark =
+            window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const theme = storedTheme || (systemIsDark ? "dark" : "light");
+          document.documentElement.dataset.theme = theme;
+          const criticalCSS = `
+            :root {
+              --bg-color: #ffffff;
+              --text-color: #333333;
+              --card-bg: #fafafa;
+              --header-bg: #0d659e;
+              --header-text: #ffffff;
+              --accent-color: #0d659e;
+              --accent-hover: #004a9c;
+              --dots-color: #444444;
+              --offline-bg: #f8d7da;
+              --offline-text: #7a1f24;
+              --hr-line: #555555;
+              --link-color: #004a9c;
+              --accent-text: #ffffff;
+              --transition-speed: 0.3s;
+              --max-width: 600px;
+            }
+            [data-theme="dark"] {
+              --bg-color: #121212;
+              --text-color: #e0e0e0;
+              --card-bg: #1e1e1e;
+              --header-bg: #0d47a1;
+              --header-text: #ffffff;
+              --accent-color: #90caf9;
+              --accent-hover: #64b5f6;
+              --dots-color: #bbbbbb;
+              --offline-bg: #442222;
+              --offline-text: #ffb7b7;
+              --hr-line: #666666;
+              --link-color: #90caf9;
+            }
+            body {
+              background-color: var(--bg-color);
+              color: var(--text-color);
+              transition: background-color 0.2s, color 0.2s;
+            }
+          `;
+          const style = document.createElement("style");
+          style.textContent = criticalCSS;
+          document.head.appendChild(style);
+        } catch (e) {}
+      })();
+    </script>
+    <link id="styles-link" rel="stylesheet" href="" />
+    <link id="qrcode-styles-link" rel="stylesheet" href="" />
+    <script type="module">
+      const bp = window.QR_BASE_PATH || "/";
+      const { VERSION } = await import(`${bp}js/version.js`);
+
+      document.getElementById("styles-link").href = `${bp}css/styles.css?v=${VERSION}`;
+      document.getElementById("qrcode-styles-link").href = `${bp}css/qrcode.css?v=${VERSION}`;
+
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = `${bp}js/vendor/qrcode.js?v=${VERSION}`;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Failed to load qrcode.js"));
+        document.head.appendChild(s);
+      });
+
+      const pageScript = document.createElement("script");
+      pageScript.type = "module";
+      pageScript.src = `${bp}js/qrcode-page.js?v=${VERSION}`;
+      document.head.appendChild(pageScript);
+    </script>
+  </head>
+  <body>
+    <main class="qrcode-page">
+      <header class="qrcode-page__header">
+        <a id="qrcode-home-btn" class="qrcode-home-link" href="../index.html">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+          </svg>
+          <span>Home</span>
+        </a>
+        <h1 class="qrcode-page__title">QR Code Generator</h1>
+        <button id="qrcode-theme-toggle" class="qrcode-theme-toggle" aria-label="Toggle Dark Mode">
+          🌓
+        </button>
+      </header>
+
+      <section class="qrcode-page__form">
+        <div class="qrcode-field">
+          <label for="qrcode-sheet-url" class="qrcode-field__label">Google Sheets URL</label>
+          <input
+            type="url"
+            id="qrcode-sheet-url"
+            class="qrcode-field__input"
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+          />
+          <p class="qrcode-field__hint">
+            Paste the full Google Sheets URL (edit or CSV export format)
+          </p>
+        </div>
+
+        <div class="qrcode-field">
+          <label for="qrcode-website-url" class="qrcode-field__label">Website URL</label>
+          <input type="url" id="qrcode-website-url" class="qrcode-field__input" />
+        </div>
+
+        <div class="qrcode-row">
+          <label class="qrcode-checkbox">
+            <input type="checkbox" id="qrcode-force-update" />
+            <span>Force Update</span>
+          </label>
+          <label class="qrcode-checkbox">
+            <input type="checkbox" id="qrcode-nocache" />
+            <span>No Cache</span>
+          </label>
+        </div>
+
+        <div class="qrcode-row">
+          <div class="qrcode-field qrcode-field--half">
+            <label for="qrcode-print-size" class="qrcode-field__label">Print Size (inches)</label>
+            <select id="qrcode-print-size" class="qrcode-field__select">
+              <option value="1">1"</option>
+              <option value="2">2"</option>
+              <option value="3" selected>3"</option>
+              <option value="4">4"</option>
+              <option value="5">5"</option>
+              <option value="6">6"</option>
+            </select>
+          </div>
+          <div class="qrcode-field qrcode-field--half">
+            <label for="qrcode-pixel-size" class="qrcode-field__label">Pixel Width</label>
+            <input
+              type="number"
+              id="qrcode-pixel-size"
+              class="qrcode-field__input"
+              value="900"
+              min="100"
+              max="3000"
+              step="100"
+            />
+          </div>
+        </div>
+
+        <div class="qrcode-color-row">
+          <div class="qrcode-field qrcode-field--third">
+            <label for="qrcode-fg-color" class="qrcode-field__label">Foreground</label>
+            <input type="color" id="qrcode-fg-color" class="qrcode-color-input" value="#000000" />
+          </div>
+          <div class="qrcode-field qrcode-field--third">
+            <label for="qrcode-bg-color" class="qrcode-field__label">Background</label>
+            <input type="color" id="qrcode-bg-color" class="qrcode-color-input" value="#FFFFFF" />
+          </div>
+          <div class="qrcode-field qrcode-field--third">
+            <label for="qrcode-margin" class="qrcode-field__label">Margin</label>
+            <input
+              type="number"
+              id="qrcode-margin"
+              class="qrcode-field__input"
+              value="2"
+              min="0"
+              max="10"
+              step="1"
+            />
+          </div>
+        </div>
+
+        <button id="qrcode-generate-btn" class="qrcode-btn qrcode-btn--primary" type="button">
+          Generate QR Code
+        </button>
+      </section>
+
+      <section class="qrcode-page__output" id="qrcode-output" hidden>
+        <h2 class="qrcode-output__title">Generated QR Code</h2>
+        <div class="qrcode-url-preview" id="qrcode-url-preview"></div>
+        <div class="qrcode-preview" id="qrcode-preview">
+          <canvas id="qrcode-canvas"></canvas>
+        </div>
+        <div class="qrcode-actions">
+          <button id="qrcode-download-btn" class="qrcode-btn qrcode-btn--primary" type="button">
+            Download PNG
+          </button>
+          <button id="qrcode-copy-url-btn" class="qrcode-btn qrcode-btn--secondary" type="button">
+            Copy URL
+          </button>
+        </div>
+        <div id="qrcode-status" class="qrcode-status" hidden></div>
+      </section>
+    </main>
+  </body>
+</html>

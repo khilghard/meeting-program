@@ -28,7 +28,8 @@ const GoogleAuth = (() => {
     clientId: null,
     redirectUri: null,
     scopes: [
-      "https://www.googleapis.com/auth/spreadsheets"
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive.metadata.readonly"
     ]
   };
 
@@ -106,6 +107,8 @@ const GoogleAuth = (() => {
     config.clientId = clientId;
     config.redirectUri = redirectUri;
 
+    console.log("[AUTH] Config:", { clientId, scopes: config.scopes });
+
     state.initialized = false;
     state.tokenClient = null;
 
@@ -169,7 +172,7 @@ const GoogleAuth = (() => {
       // Schedule refresh
       scheduleTokenRefresh();
 
-      console.log("[AUTH] Token received, expires in:", expiresIn, "seconds");
+      console.log("[AUTH] Token received, expires in:", expiresIn, "seconds, scope:", response.scope || "not provided");
 
       // Resolve the signIn promise if pending
       if (state._signInResolve) {

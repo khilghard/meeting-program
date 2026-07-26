@@ -30,6 +30,15 @@ app.get("/meeting-program/cms_agenda", (req, res) => {
   res.sendFile(path.join(__dirname, "cms_agenda", "index.html"));
 });
 
+// Serve QR Code Generator page under /meeting-program/qrcode
+app.use("/meeting-program/qrcode", express.static(path.join(__dirname, "qrcode")));
+app.get("/meeting-program/qrcode", (req, res) => {
+  if (req.path === "/meeting-program/qrcode" && !req.path.endsWith("/")) {
+    return res.redirect(301, "/meeting-program/qrcode/");
+  }
+  res.sendFile(path.join(__dirname, "qrcode", "index.html"));
+});
+
 // Start the server
 const port = Number(process.env.PORT) || 8000;
 const host = process.env.HOST || "127.0.0.1";
@@ -40,4 +49,5 @@ app.listen(port, host, () => {
   console.log(`Server running at http://${displayHost}:${port}/meeting-program`);
   console.log(`CMS available at http://${displayHost}:${port}/meeting-program/cms`);
   console.log(`Agenda CMS available at http://${displayHost}:${port}/meeting-program/cms_agenda`);
+  console.log(`QR Code Generator available at http://${displayHost}:${port}/meeting-program/qrcode`);
 });

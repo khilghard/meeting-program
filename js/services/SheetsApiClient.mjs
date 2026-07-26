@@ -100,6 +100,7 @@ export class SheetsApiClient {
 
   async _fetch(url, options = {}) {
     const token = await this._getToken();
+    console.log("[API] Fetching:", { url, tokenPrefix: token.substring(0, 10) + "..." });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this._timeoutMs);
 
@@ -122,6 +123,7 @@ export class SheetsApiClient {
 
     if (response.status === 403) {
       const { message, reason } = await this._readErrorBody(response);
+      console.error("[API] 403 Forbidden:", { url, message, reason, tokenPrefix: token.substring(0, 10) + "..." });
       throw new SheetsAuthError(message || "request forbidden", reason);
     }
     if (response.status === 429) throw new SheetsRateLimitError();
